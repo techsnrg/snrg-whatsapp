@@ -11,9 +11,14 @@ DEFAULT_API_VERSION = "v25.0"
 DEFAULT_TEMPLATE_LANGUAGE = "en_US"
 DEFAULT_TEMPLATE_NAME = "sales_quotation_confirmation"
 REQUEST_TIMEOUT = 30
+SEND_MARKER = "SNRG WhatsApp quotation sent"
+FAILURE_MARKER = "SNRG WhatsApp quotation failed"
 
 
 def enqueue_sales_quotation_whatsapp(doc, method=None):
+    if not _is_quotation_send_enabled():
+        return
+
     frappe.enqueue(
         "snrg_whatsapp.api.send_sales_quotation_whatsapp",
         queue="short",
@@ -22,24 +27,48 @@ def enqueue_sales_quotation_whatsapp(doc, method=None):
     )
 
 
-def send_sales_quotation_whatsapp(quotation_name):
+def send_sales_quotation_whatsapp(quotation_name, raise_on_error=False, force=False):
+    try:
+        _send_sales_quotation_whatsapp(quotation_name, force=force)
+    except Exception:
+        frappe.db.rollback()
+        docname = quotation_name or "Unknown"
+        message = frappe.get_traceback()
+        frappe.log_error(message=message, title=f"{FAILURE_MARKER}: {docname}")
+
+        if frappe.db.exists("Quotation", docname):
+            doc = frappe.get_doc("Quotation", docname)
+            _add_timeline_note(doc, FAILURE_MARKER, "See Error Log for traceback.")
+
+        if raise_on_error:
+            raise
+
+
+def _send_sales_quotation_whatsapp(quotation_name, force=False):
     doc = frappe.get_doc("Quotation", quotation_name)
 
     if doc.docstatus != 1:
         return
 
+    if not force and _already_sent(doc):
+        return
+
     config = _get_config()
     recipient = _get_recipient_number(doc)
     if not recipient:
-        frappe.log_error(
-            title="Quotation WhatsApp skipped",
-            message=f"No mobile number found for Quotation {doc.name}.",
-        )
+        _add_timeline_note(doc, FAILURE_MARKER, "No mobile number found.")
         return
 
     pdf_bytes, filename = _build_quotation_pdf(doc, config["print_format"])
     media_id = _upload_media(config, pdf_bytes, filename)
     response = _send_template_message(config, doc, recipient, media_id, filename)
+
+    message_id = (
+        response.get("messages", [{}])[0].get("id")
+        if isinstance(response, dict)
+        else None
+    )
+    _add_timeline_note(doc, SEND_MARKER, f"Recipient: {recipient} | Message ID: {message_id or 'n/a'}")
 
     frappe.logger().info(
         {
@@ -49,6 +78,7 @@ def send_sales_quotation_whatsapp(quotation_name):
             "meta_response": response,
         }
     )
+    frappe.db.commit()
 
 
 def _get_config():
@@ -73,6 +103,10 @@ def _get_config():
         frappe.throw("Missing WhatsApp config in site_config.json: " + ", ".join(missing))
 
     return config
+
+
+def _is_quotation_send_enabled():
+    return cint_or_none(frappe.conf.get("enable_quotation_whatsapp_on_submit"), default=1) == 1
 
 
 def _get_recipient_number(doc):
@@ -118,6 +152,25 @@ def _normalize_phone(value):
         return "91" + digits[1:]
 
     return digits
+
+
+def _already_sent(doc):
+    return bool(
+        frappe.db.exists(
+            "Comment",
+            {
+                "reference_doctype": doc.doctype,
+                "reference_name": doc.name,
+                "comment_type": "Comment",
+                "content": ["like", f"%{SEND_MARKER}%"],
+            },
+        )
+    )
+
+
+def _add_timeline_note(doc, marker, detail):
+    content = f"{marker}. {detail}"
+    doc.add_comment("Comment", content)
 
 
 def _build_quotation_pdf(doc, print_format=None):
@@ -203,3 +256,13 @@ def _parse_meta_response(response, action):
         frappe.throw(f"Failed to {action}: {payload}")
 
     return payload
+
+
+def cint_or_none(value, default=0):
+    if value is None:
+        return default
+
+    if isinstance(value, bool):
+        return int(value)
+
+    return 1 if str(value).strip().lower() in {"1", "true", "yes", "on"} else 0

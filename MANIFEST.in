@@ -1,0 +1,7 @@
+include *.md
+include *.txt
+include *.json
+recursive-include snrg_whatsapp *.py
+recursive-include public *
+recursive-include templates *
+recursive-include www *

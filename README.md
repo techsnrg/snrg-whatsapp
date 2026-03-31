@@ -14,6 +14,7 @@ Add these keys to `site_config.json` for the ERPNext site:
   "whatsapp_cloud_access_token": "YOUR_META_ACCESS_TOKEN",
   "whatsapp_cloud_phone_number_id": "1048226118374784",
   "whatsapp_cloud_api_version": "v25.0",
+  "enable_quotation_whatsapp_on_submit": 1,
   "whatsapp_quotation_template_name": "sales_quotation_confirmation",
   "whatsapp_quotation_template_language": "en_US",
   "whatsapp_quotation_print_format": "Quotation"
@@ -36,3 +37,5 @@ bench restart
 - The Quotation submit hook queues the WhatsApp send in the background.
 - Mobile lookup currently prefers `Quotation.contact_mobile`, then `Customer.mobile_no`, then `Contact.mobile_no`.
 - This app is intentionally backend-only and does not add a Desk module or frontend UI.
+- Successful sends are marked on the quotation timeline to prevent duplicate sends on repeat execution.
+- Set `enable_quotation_whatsapp_on_submit` to `0` on production if you want the app installed before enabling automation.
