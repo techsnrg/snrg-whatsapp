@@ -7,7 +7,6 @@ from frappe.utils import formatdate
 from frappe.utils.pdf import get_pdf
 
 
-DEFAULT_API_VERSION = "v25.0"
 DEFAULT_TEMPLATE_LANGUAGE = "en_US"
 DEFAULT_TEMPLATE_NAME = "sales_quotation_confirmation"
 REQUEST_TIMEOUT = 30
@@ -59,9 +58,8 @@ def _send_sales_quotation_whatsapp(quotation_name, force=False):
         _add_timeline_note(doc, FAILURE_MARKER, "No mobile number found.")
         return
 
-    pdf_bytes, filename = _build_quotation_pdf(doc, config["print_format"])
-    media_id = _upload_media(config, pdf_bytes, filename)
-    response = _send_template_message(config, doc, recipient, media_id, filename)
+    filename = f"{doc.name}.pdf"
+    response = _send_template_message(config, doc, recipient, filename)
 
     message_id = (
         response.get("messages", [{}])[0].get("id")
@@ -83,9 +81,10 @@ def _send_sales_quotation_whatsapp(quotation_name, force=False):
 
 def _get_config():
     config = {
-        "access_token": frappe.conf.get("whatsapp_cloud_access_token"),
-        "phone_number_id": frappe.conf.get("whatsapp_cloud_phone_number_id"),
-        "api_version": frappe.conf.get("whatsapp_cloud_api_version") or DEFAULT_API_VERSION,
+        "chatwoot_base_url": (frappe.conf.get("chatwoot_base_url") or "").rstrip("/"),
+        "chatwoot_account_id": frappe.conf.get("chatwoot_account_id"),
+        "chatwoot_api_access_token": frappe.conf.get("chatwoot_api_access_token"),
+        "chatwoot_inbox_id": frappe.conf.get("chatwoot_inbox_id"),
         "template_name": frappe.conf.get("whatsapp_quotation_template_name")
         or DEFAULT_TEMPLATE_NAME,
         "template_language": frappe.conf.get("whatsapp_quotation_template_language")
@@ -94,10 +93,14 @@ def _get_config():
     }
 
     missing = []
-    if not config["access_token"]:
-        missing.append("whatsapp_cloud_access_token")
-    if not config["phone_number_id"]:
-        missing.append("whatsapp_cloud_phone_number_id")
+    for key in (
+        "chatwoot_base_url",
+        "chatwoot_account_id",
+        "chatwoot_api_access_token",
+        "chatwoot_inbox_id",
+    ):
+        if not config[key]:
+            missing.append(key)
 
     if missing:
         frappe.throw("Missing WhatsApp config in site_config.json: " + ", ".join(missing))
@@ -154,6 +157,11 @@ def _normalize_phone(value):
     return digits
 
 
+def _chatwoot_phone_number(value):
+    normalized = _normalize_phone(value)
+    return f"+{normalized}" if normalized else None
+
+
 def _already_sent(doc):
     return bool(
         frappe.db.exists(
@@ -186,67 +194,152 @@ def _build_quotation_pdf(doc, print_format=None):
     return pdf_bytes, filename
 
 
-def _upload_media(config, pdf_bytes, filename):
-    response = requests.post(
-        _graph_url(config, "media"),
-        headers={"Authorization": f"Bearer {config['access_token']}"},
-        data={"messaging_product": "whatsapp"},
-        files={"file": (filename, io.BytesIO(pdf_bytes), "application/pdf")},
-        timeout=REQUEST_TIMEOUT,
-    )
-    return _parse_meta_response(response, "upload quotation PDF")["id"]
+def _send_template_message(config, doc, recipient, filename):
+    chatwoot_file = _upload_to_chatwoot(config, doc, filename)
+    contact = _find_or_create_chatwoot_contact(config, doc, recipient)
+    conversation = _find_or_create_chatwoot_conversation(config, contact, recipient)
+    conversation_id = conversation.get("id") or conversation.get("display_id")
 
+    if not conversation_id:
+        frappe.throw(f"Chatwoot conversation ID missing in response: {conversation}")
 
-def _send_template_message(config, doc, recipient, media_id, filename):
     payload = {
-        "messaging_product": "whatsapp",
-        "to": recipient,
-        "type": "template",
-        "template": {
+        "content": _render_template_preview(doc),
+        "message_type": "outgoing",
+        "content_type": "text",
+        "private": False,
+        "attachments": [chatwoot_file["blob_id"]],
+        "template_params": {
             "name": config["template_name"],
-            "language": {"code": config["template_language"]},
-            "components": [
-                {
-                    "type": "header",
-                    "parameters": [
-                        {
-                            "type": "document",
-                            "document": {"id": media_id, "filename": filename},
-                        }
-                    ],
+            "language": config["template_language"],
+            "category": "UTILITY",
+            "processed_params": {
+                "header": {
+                    "media_url": chatwoot_file["file_url"],
+                    "media_type": "document",
+                    "media_name": filename,
                 },
-                {
-                    "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": doc.customer_name or doc.party_name},
-                        {"type": "text", "text": doc.name},
-                        {"type": "text", "text": formatdate(doc.transaction_date)},
-                    ],
+                "body": {
+                    "1": doc.customer_name or doc.party_name,
+                    "2": doc.name,
+                    "3": formatdate(doc.transaction_date),
                 },
-            ],
+            },
         },
     }
 
     response = requests.post(
-        _graph_url(config, "messages"),
-        headers={
-            "Authorization": f"Bearer {config['access_token']}",
-            "Content-Type": "application/json",
-        },
+        _chatwoot_url(config, f"conversations/{conversation_id}/messages"),
+        headers=_chatwoot_headers(config),
         json=payload,
         timeout=REQUEST_TIMEOUT,
     )
-    return _parse_meta_response(response, "send quotation WhatsApp template")
+    return _parse_chatwoot_response(response, "send quotation template via Chatwoot")
 
 
-def _graph_url(config, endpoint):
+def _upload_to_chatwoot(config, doc, filename):
+    pdf_bytes, _ = _build_quotation_pdf(doc, config["print_format"])
+    response = requests.post(
+        _chatwoot_url(config, "upload"),
+        headers={"api_access_token": config["chatwoot_api_access_token"]},
+        files={"attachment": (filename, io.BytesIO(pdf_bytes), "application/pdf")},
+        timeout=REQUEST_TIMEOUT,
+    )
+    return _parse_chatwoot_response(response, "upload quotation PDF to Chatwoot")
+
+
+def _find_or_create_chatwoot_contact(config, doc, recipient):
+    phone_number = _chatwoot_phone_number(recipient)
+    contact = _find_chatwoot_contact(config, phone_number, recipient)
+    if contact:
+        return contact
+
+    payload = {
+        "name": doc.customer_name or doc.party_name,
+        "phone_number": phone_number,
+        "inbox_id": int(config["chatwoot_inbox_id"]),
+    }
+    response = requests.post(
+        _chatwoot_url(config, "contacts"),
+        headers=_chatwoot_headers(config),
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+    return _parse_chatwoot_response(response, "create Chatwoot contact")["payload"]["contact"]
+
+
+def _find_chatwoot_contact(config, phone_number, recipient):
+    candidates = []
+    for query in filter(None, [phone_number, recipient, recipient[-10:]]):
+        response = requests.get(
+            _chatwoot_url(config, "contacts/search"),
+            headers=_chatwoot_headers(config),
+            params={"q": query},
+            timeout=REQUEST_TIMEOUT,
+        )
+        payload = _parse_chatwoot_response(response, f"search Chatwoot contacts for {query}")
+        candidates.extend(payload.get("payload", []))
+
+    normalized_target = _normalize_phone(recipient)
+    for contact in candidates:
+        candidate_phone = _normalize_phone(contact.get("phone_number"))
+        if candidate_phone == normalized_target:
+            return contact
+
+    return None
+
+
+def _find_or_create_chatwoot_conversation(config, contact, recipient):
+    response = requests.get(
+        _chatwoot_url(config, f"contacts/{contact['id']}/conversations"),
+        headers=_chatwoot_headers(config),
+        timeout=REQUEST_TIMEOUT,
+    )
+    payload = _parse_chatwoot_response(response, "fetch Chatwoot conversations")
+    inbox_id = int(config["chatwoot_inbox_id"])
+    conversations = payload.get("payload", [])
+    for conversation in conversations:
+        if conversation.get("inbox_id") == inbox_id:
+            return conversation
+
+    create_payload = {
+        "inbox_id": inbox_id,
+        "contact_id": contact["id"],
+        "status": "open",
+    }
+    response = requests.post(
+        _chatwoot_url(config, "conversations"),
+        headers=_chatwoot_headers(config),
+        json=create_payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+    return _parse_chatwoot_response(response, "create Chatwoot conversation")
+
+
+def _render_template_preview(doc):
+    customer_name = doc.customer_name or doc.party_name
+    quotation_date = formatdate(doc.transaction_date)
     return (
-        f"https://graph.facebook.com/{config['api_version']}/"
-        f"{config['phone_number_id']}/{endpoint}"
+        f"Dear {customer_name},\n\n"
+        f"Your quotation {doc.name} dated {quotation_date} is generated.\n\n"
+        "Please acknowledge receipt of this quotation. In case of any clarification or "
+        "modification required, you may respond to this message.\n\n"
+        "Regards,\nSNRG Electricals India Private Limited"
     )
 
 
-def _parse_meta_response(response, action):
+def _chatwoot_headers(config):
+    return {
+        "api_access_token": config["chatwoot_api_access_token"],
+        "Content-Type": "application/json",
+    }
+
+
+def _chatwoot_url(config, endpoint):
+    return f"{config['chatwoot_base_url']}/api/v1/accounts/{config['chatwoot_account_id']}/{endpoint}"
+
+
+def _parse_chatwoot_response(response, action):
     try:
         payload = response.json()
     except Exception:

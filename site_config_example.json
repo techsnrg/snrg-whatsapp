@@ -1,7 +1,8 @@
 {
-  "whatsapp_cloud_access_token": "YOUR_META_ACCESS_TOKEN",
-  "whatsapp_cloud_phone_number_id": "1048226118374784",
-  "whatsapp_cloud_api_version": "v25.0",
+  "chatwoot_base_url": "https://chatwoot.example.com",
+  "chatwoot_account_id": 1,
+  "chatwoot_api_access_token": "YOUR_CHATWOOT_USER_API_TOKEN",
+  "chatwoot_inbox_id": 12,
   "enable_quotation_whatsapp_on_submit": 1,
   "whatsapp_quotation_template_name": "sales_quotation_confirmation",
   "whatsapp_quotation_template_language": "en_US",

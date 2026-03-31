@@ -8,7 +8,7 @@ with open("requirements.txt") as f:
 setup(
     name="snrg_whatsapp",
     version="0.0.1",
-    description="WhatsApp automations for ERPNext using Meta Cloud API",
+    description="WhatsApp automations for ERPNext using Chatwoot",
     author="SNRG",
     author_email="hello@aerele.in",
     packages=find_packages(),
