@@ -475,6 +475,21 @@ def _get_contact_name(doc, automation):
 
 
 def _build_template_body(doc, automation):
+    if doc.doctype == "Sales Invoice":
+        return {
+            "1": _get_contact_name(doc, automation),
+            "2": doc.name,
+            "3": formatdate(doc.get(automation["doc_date_field"])),
+            "4": _format_amount(doc.get("grand_total")),
+        }
+
+    if doc.doctype == "Payment Entry":
+        return {
+            "1": _get_contact_name(doc, automation),
+            "2": _format_amount(_get_payment_entry_amount(doc)),
+            "3": formatdate(doc.get(automation["doc_date_field"])),
+        }
+
     return {
         "1": _get_contact_name(doc, automation),
         "2": doc.name,
@@ -499,9 +514,10 @@ def _render_quotation_preview(doc):
 def _render_sales_invoice_preview(doc):
     return (
         f"Dear {_safe_name(doc.customer_name or doc.customer)},\n\n"
-        f"Your sales invoice {doc.name} dated {formatdate(doc.posting_date)} is generated.\n\n"
-        "Please find the invoice attached for your reference. If you need any clarification, "
-        "you may respond to this message.\n\n"
+        f"Your invoice {doc.name} dated {formatdate(doc.posting_date)} for amount "
+        f"Rs. {_format_amount(doc.grand_total)} has been generated.\n\n"
+        "Please find the invoice document attached for your reference.\n\n"
+        "Kindly review the details and process the payment as per agreed terms.\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
 
@@ -509,15 +525,32 @@ def _render_sales_invoice_preview(doc):
 def _render_payment_entry_preview(doc):
     return (
         f"Dear {_safe_name(doc.party_name)},\n\n"
-        f"Your payment entry {doc.name} dated {formatdate(doc.posting_date)} is recorded.\n\n"
-        "Please find the payment receipt attached for your reference. If you need any "
-        "clarification, you may respond to this message.\n\n"
+        f"We acknowledge receipt of your payment of Rs. {_format_amount(_get_payment_entry_amount(doc))} "
+        f"on {formatdate(doc.posting_date)}.\n\n"
+        "The same has been recorded against your account. Please find the receipt attached "
+        "for your reference.\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
 
 
 def _safe_name(value):
     return value or "Customer"
+
+
+def _get_payment_entry_amount(doc):
+    for fieldname in ("received_amount", "paid_amount", "base_received_amount", "base_paid_amount"):
+        value = doc.get(fieldname)
+        if value:
+            return value
+    return 0
+
+
+def _format_amount(value):
+    try:
+        amount = float(value or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    return f"{amount:,.2f}"
 
 
 def _chatwoot_headers(config):
