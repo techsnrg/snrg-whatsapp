@@ -9,5 +9,11 @@ app_license = "mit"
 doc_events = {
     "Quotation": {
         "on_submit": "snrg_whatsapp.api.enqueue_sales_quotation_whatsapp",
-    }
+    },
+    "Sales Invoice": {
+        "on_submit": "snrg_whatsapp.api.enqueue_sales_invoice_whatsapp",
+    },
+    "Payment Entry": {
+        "on_submit": "snrg_whatsapp.api.enqueue_payment_entry_whatsapp",
+    },
 }
