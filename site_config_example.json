@@ -4,15 +4,15 @@
   "chatwoot_api_access_token": "YOUR_CHATWOOT_USER_API_TOKEN",
   "chatwoot_inbox_id": 12,
   "enable_quotation_whatsapp_on_submit": 1,
-  "enable_sales_invoice_whatsapp_on_submit": 0,
-  "enable_payment_entry_whatsapp_on_submit": 0,
+  "enable_sales_invoice_whatsapp_on_submit": 1,
+  "enable_payment_entry_whatsapp_on_submit": 1,
   "whatsapp_quotation_template_name": "sales_quotation_confirmation",
   "whatsapp_quotation_template_language": "en_US",
   "whatsapp_quotation_print_format": "Quotation",
-  "whatsapp_sales_invoice_template_name": "sales_invoice_confirmation",
-  "whatsapp_sales_invoice_template_language": "en_US",
-  "whatsapp_sales_invoice_print_format": "Sales Invoice",
-  "whatsapp_payment_entry_template_name": "payment_entry_confirmation",
-  "whatsapp_payment_entry_template_language": "en_US",
-  "whatsapp_payment_entry_print_format": "Payment Entry"
+  "whatsapp_sales_invoice_template_name": "sales_invoice_erpnext",
+  "whatsapp_sales_invoice_template_language": "en",
+  "whatsapp_sales_invoice_print_format": "Sales Invoice New",
+  "whatsapp_payment_entry_template_name": "payment_entry_erpnext",
+  "whatsapp_payment_entry_template_language": "en",
+  "whatsapp_payment_entry_print_format": "Payment Receipt"
 }
