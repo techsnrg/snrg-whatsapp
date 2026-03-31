@@ -1,0 +1,8 @@
+{
+  "whatsapp_cloud_access_token": "YOUR_META_ACCESS_TOKEN",
+  "whatsapp_cloud_phone_number_id": "1048226118374784",
+  "whatsapp_cloud_api_version": "v25.0",
+  "whatsapp_quotation_template_name": "sales_quotation_confirmation",
+  "whatsapp_quotation_template_language": "en_US",
+  "whatsapp_quotation_print_format": "Quotation"
+}
