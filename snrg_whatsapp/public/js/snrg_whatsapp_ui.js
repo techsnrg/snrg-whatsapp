@@ -32,6 +32,11 @@ frappe.provide("snrg_whatsapp");
 		report.__snrg_whatsapp_labels = [];
 	}
 
+	function removeReportLauncher(report) {
+		if (!report || !report.page) return;
+		report.page.remove_inner_button(__("Load WhatsApp"));
+	}
+
 	async function fetchRecipients(args) {
 		const response = await frappe.call({
 			method: "snrg_whatsapp.api.get_manual_whatsapp_recipients",
@@ -93,9 +98,18 @@ frappe.provide("snrg_whatsapp");
 
 		try {
 			const recipients = await fetchRecipients({ doctype, docname: frm.doc.name });
-			if (!recipients.length) return;
-
 			frm.__snrg_whatsapp_labels = [];
+			if (!recipients.length) {
+				const label = __("No recipients configured");
+				frm.add_custom_button(
+					label,
+					() => frappe.msgprint(__("No WhatsApp recipients are configured for this customer.")),
+					GROUP_LABEL
+				);
+				frm.__snrg_whatsapp_labels.push(label);
+				return;
+			}
+
 			recipients.forEach((recipient) => {
 				const label = normalizeRecipientLabel(recipient);
 				frm.add_custom_button(label, () => sendDocument(doctype, frm.doc.name, recipient), GROUP_LABEL);
@@ -151,6 +165,36 @@ frappe.provide("snrg_whatsapp");
 		setTimeout(rebuild, 300);
 	};
 
+	snrg_whatsapp.loadReportButtons = async function (report, reportName) {
+		if (!report || !report.page) return;
+		clearReportButtons(report);
+
+		const customer = report.get_filter_value("customer");
+		if (!customer) {
+			frappe.msgprint(__("Please select a Customer first."));
+			return;
+		}
+
+		try {
+			const recipients = await fetchRecipients({ customer });
+			if (!recipients.length) {
+				frappe.msgprint(__("No WhatsApp recipients found for this customer."));
+				return;
+			}
+
+			report.__snrg_whatsapp_labels = [];
+			recipients.forEach((recipient) => {
+				const label = normalizeRecipientLabel(recipient);
+				report.page.add_inner_button(label, () => sendReport(reportName, report, recipient), GROUP_LABEL);
+				report.__snrg_whatsapp_labels.push(label);
+			});
+			frappe.show_alert({ message: __("WhatsApp recipients loaded"), indicator: "green" });
+		} catch (error) {
+			console.error("Failed to build report WhatsApp buttons", error);
+			alertError(__("Could not load WhatsApp recipients."));
+		}
+	};
+
 	function patchReport(reportName) {
 		const reportConfig = frappe.query_reports && frappe.query_reports[reportName];
 		if (!reportConfig || reportConfig.__snrg_whatsapp_patched) return !!reportConfig;
@@ -172,8 +216,39 @@ frappe.provide("snrg_whatsapp");
 		setTimeout(() => patchReportsWithRetry(attempt + 1), 400);
 	}
 
+	function wrapQueryReportLifecycle() {
+		if (!frappe.views || !frappe.views.QueryReport) return false;
+		if (frappe.views.QueryReport.__snrg_whatsapp_wrapped) return true;
+
+		const originalRefreshReport = frappe.views.QueryReport.prototype.refresh_report;
+		frappe.views.QueryReport.prototype.refresh_report = function () {
+			const result = originalRefreshReport.apply(this, arguments);
+			Promise.resolve(result).then(() => {
+				removeReportLauncher(this);
+				clearReportButtons(this);
+				if (!REPORT_NAMES.includes(this.report_name)) return;
+				frappe.after_ajax(() => {
+					setTimeout(() => {
+						this.page.add_inner_button(
+							__("Load WhatsApp"),
+							() => snrg_whatsapp.loadReportButtons(this, this.report_name)
+						);
+					}, 300);
+				});
+			});
+			return result;
+		};
+
+		frappe.views.QueryReport.__snrg_whatsapp_wrapped = true;
+		return true;
+	}
+
+	wrapQueryReportLifecycle();
 	patchReportsWithRetry(0);
 	if (frappe.router && frappe.router.on) {
-		frappe.router.on("change", () => patchReportsWithRetry(0));
+		frappe.router.on("change", () => {
+			wrapQueryReportLifecycle();
+			patchReportsWithRetry(0);
+		});
 	}
 })();
