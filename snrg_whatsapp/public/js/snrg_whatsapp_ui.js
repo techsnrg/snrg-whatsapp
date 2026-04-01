@@ -93,17 +93,25 @@ frappe.provide("snrg_whatsapp");
 	}
 
 	snrg_whatsapp.setup_document_buttons = async function (frm, doctype) {
-		clearFormButtons(frm);
 		if (frm.is_new() || frm.doc.docstatus !== 1) return;
 
+		// Prevent flicker: if button already exists in DOM, do not re-add
+		if (frm.page.wrapper.find(`button:contains("${GROUP_LABEL}")`).length > 0) {
+			return;
+		}
+
 		try {
-			const recipients = await fetchRecipients({ doctype, docname: frm.doc.name });
+			if (!frm.__whatsapp_recipients) {
+				frm.__whatsapp_recipients = await fetchRecipients({ doctype, docname: frm.doc.name });
+			}
+			const recipients = frm.__whatsapp_recipients;
+
 			frm.__snrg_whatsapp_labels = [];
 			if (!recipients.length) {
-				const label = __("No recipients configured");
+				const label = __("No Sales Person Attached");
 				frm.add_custom_button(
 					label,
-					() => frappe.msgprint(__("No WhatsApp recipients are configured for this customer.")),
+					() => frappe.msgprint(__("No Sales Person is attached to this customer.")),
 					GROUP_LABEL
 				);
 				frm.__snrg_whatsapp_labels.push(label);
