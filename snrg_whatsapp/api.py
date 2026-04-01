@@ -1,4 +1,5 @@
 import io
+import json
 import re
 
 import frappe
@@ -9,6 +10,19 @@ from frappe.utils.pdf import get_pdf
 
 DEFAULT_TEMPLATE_LANGUAGE = "en_US"
 REQUEST_TIMEOUT = 30
+MANUAL_DOC_SEND_GROUP = "Send WhatsApp"
+SUPPORTED_REPORTS = {
+    "Customer Ledger Report": {
+        "label": "Customer Ledger",
+        "include_ar": 0,
+        "include_ledger": 1,
+    },
+    "Customer AR Report": {
+        "label": "Customer AR",
+        "include_ar": 1,
+        "include_ledger": 0,
+    },
+}
 
 AUTOMATIONS = {
     "Quotation": {
@@ -113,6 +127,77 @@ def send_payment_entry_whatsapp(payment_entry_name, raise_on_error=False, force=
     )
 
 
+@frappe.whitelist()
+def get_manual_whatsapp_recipients(doctype=None, docname=None, customer=None):
+    customer_name = _resolve_customer_for_manual_send(doctype=doctype, docname=docname, customer=customer)
+    if not customer_name:
+        return {"customer": None, "recipients": []}
+
+    recipients = _get_customer_recipients(customer_name)
+    return {
+        "customer": customer_name,
+        "recipients": recipients,
+    }
+
+
+@frappe.whitelist()
+def send_document_whatsapp_manual(doctype, docname, recipient_mobile, recipient_label=None):
+    if doctype not in AUTOMATIONS:
+        frappe.throw(f"Unsupported DocType for WhatsApp send: {doctype}")
+
+    automation = AUTOMATIONS[doctype]
+    response = _deliver_document_whatsapp(
+        doctype,
+        docname,
+        automation,
+        force=True,
+        recipient_override=recipient_mobile,
+        note_context=recipient_label or recipient_mobile,
+    )
+    return {
+        "message": f"{doctype} sent on WhatsApp to {recipient_label or recipient_mobile}",
+        "response": response,
+    }
+
+
+@frappe.whitelist()
+def send_customer_report_whatsapp(report_name, recipient_mobile, recipient_label=None, filters=None):
+    report_config = SUPPORTED_REPORTS.get(report_name)
+    if not report_config:
+        frappe.throw(f"Unsupported report for WhatsApp send: {report_name}")
+
+    parsed_filters = _parse_report_filters(filters)
+    if not parsed_filters.get("customer"):
+        frappe.throw("Customer filter is required before sending this report on WhatsApp.")
+
+    config = _get_common_config()
+    filename, pdf_bytes = _build_customer_report_pdf(
+        report_name=report_name,
+        filters=parsed_filters,
+        include_ar=report_config["include_ar"],
+        include_ledger=report_config["include_ledger"],
+    )
+
+    customer_doc = frappe.get_doc("Customer", parsed_filters.customer)
+    content = (
+        f"Dear {_safe_name(customer_doc.customer_name)},\n\n"
+        f"Please find attached the {report_config['label']} report for {customer_doc.customer_name}.\n\n"
+        "Regards,\nSNRG Electricals India Private Limited"
+    )
+    response = _send_attachment_message(
+        config=config,
+        recipient=recipient_mobile,
+        content=content,
+        filename=filename,
+        file_bytes=pdf_bytes,
+        contact_name=_safe_name(customer_doc.customer_name),
+    )
+    return {
+        "message": f"{report_name} sent on WhatsApp to {recipient_label or recipient_mobile}",
+        "response": response,
+    }
+
+
 def _enqueue_whatsapp_send(doctype, docname):
     automation = AUTOMATIONS[doctype]
     if not _is_send_enabled(automation):
@@ -145,23 +230,30 @@ def _send_document_whatsapp(doctype, docname, raise_on_error=False, force=False)
             raise
 
 
-def _deliver_document_whatsapp(doctype, docname, automation, force=False):
+def _deliver_document_whatsapp(
+    doctype,
+    docname,
+    automation,
+    force=False,
+    recipient_override=None,
+    note_context=None,
+):
     doc = frappe.get_doc(doctype, docname)
     if doc.docstatus != 1:
-        return
+        return None
 
     if not _is_eligible_doc(doc, automation):
-        return
+        return None
 
     if not force and _already_sent(doc, automation["send_marker"]):
-        return
+        return None
 
     config = _get_common_config()
     document_config = _get_document_config(automation)
-    recipient = _get_recipient_number(doc, automation)
+    recipient = _normalize_phone(recipient_override) or _get_recipient_number(doc, automation)
     if not recipient:
         _add_timeline_note(doc, automation["failure_marker"], "No mobile number found.")
-        return
+        return None
 
     filename = f"{doc.name}.pdf"
     response = _send_template_message(
@@ -174,10 +266,11 @@ def _deliver_document_whatsapp(doctype, docname, automation, force=False):
     )
 
     message_id = response.get("source_id") if isinstance(response, dict) else None
+    suffix = f" | Target: {note_context}" if note_context else ""
     _add_timeline_note(
         doc,
         automation["send_marker"],
-        f"Recipient: {recipient} | Message ID: {message_id or 'n/a'}",
+        f"Recipient: {recipient} | Message ID: {message_id or 'n/a'}{suffix}",
     )
 
     frappe.logger().info(
@@ -190,6 +283,7 @@ def _deliver_document_whatsapp(doctype, docname, automation, force=False):
         }
     )
     frappe.db.commit()
+    return response
 
 
 def _get_common_config():
@@ -276,6 +370,65 @@ def _get_recipient_number(doc, automation):
             return normalized
 
     return None
+
+
+def _resolve_customer_for_manual_send(doctype=None, docname=None, customer=None):
+    if customer:
+        return customer
+
+    if not doctype or not docname:
+        return None
+
+    if doctype not in ("Quotation", "Sales Invoice"):
+        return None
+
+    doc = frappe.get_doc(doctype, docname)
+    if doctype == "Sales Invoice":
+        return doc.get("customer")
+
+    if doc.get("customer"):
+        return doc.get("customer")
+
+    if doc.get("quotation_to") == "Customer":
+        party_name = doc.get("party_name")
+        if party_name and frappe.db.exists("Customer", party_name):
+            return party_name
+
+    return None
+
+
+def _get_customer_recipients(customer_name):
+    if not frappe.db.exists("Customer", customer_name):
+        return []
+
+    customer_doc = frappe.get_doc("Customer", customer_name)
+    recipients = []
+    customer_mobile = _normalize_phone(customer_doc.get("custom_mobile_number"))
+    if customer_mobile:
+        recipients.append(
+            {
+                "kind": "customer",
+                "label": customer_doc.customer_name or customer_doc.name,
+                "button_label": f"Customer: {customer_doc.customer_name or customer_doc.name} ({customer_mobile})",
+                "mobile": customer_mobile,
+            }
+        )
+
+    for row in customer_doc.get("sales_team") or []:
+        mobile = _normalize_phone(row.get("custom_official_mobile_number"))
+        if not mobile:
+            continue
+        sales_person = row.get("sales_person") or "Sales Person"
+        recipients.append(
+            {
+                "kind": "sales_person",
+                "label": sales_person,
+                "button_label": f"Sales: {sales_person} ({mobile})",
+                "mobile": mobile,
+            }
+        )
+
+    return recipients
 
 
 def _get_reference_mobile(doc):
@@ -391,23 +544,55 @@ def _send_template_message(config, document_config, doc, automation, recipient, 
 
 def _upload_to_chatwoot(config, document_config, doc, filename):
     pdf_bytes, _ = _build_pdf(doc, document_config["print_format"])
+    return _upload_file_bytes_to_chatwoot(config, pdf_bytes, filename)
+
+
+def _upload_file_bytes_to_chatwoot(config, file_bytes, filename):
     response = requests.post(
         _chatwoot_url(config, "upload"),
         headers={"api_access_token": config["chatwoot_api_access_token"]},
-        files={"attachment": (filename, io.BytesIO(pdf_bytes), "application/pdf")},
+        files={"attachment": (filename, io.BytesIO(file_bytes), "application/pdf")},
         timeout=REQUEST_TIMEOUT,
     )
-    return _parse_chatwoot_response(response, f"upload {doc.doctype} PDF to Chatwoot")
+    return _parse_chatwoot_response(response, f"upload {filename} to Chatwoot")
 
 
-def _find_or_create_chatwoot_contact(config, doc, automation, recipient):
+def _send_attachment_message(config, recipient, content, filename, file_bytes, contact_name=None):
+    chatwoot_file = _upload_file_bytes_to_chatwoot(config, file_bytes, filename)
+    contact = _find_or_create_chatwoot_contact(
+        config,
+        display_name=contact_name or recipient,
+        recipient=recipient,
+    )
+    conversation = _find_or_create_chatwoot_conversation(config, contact)
+    conversation_id = conversation.get("id") or conversation.get("display_id")
+    if not conversation_id:
+        frappe.throw(f"Chatwoot conversation ID missing in response: {conversation}")
+
+    payload = {
+        "content": content,
+        "message_type": "outgoing",
+        "content_type": "text",
+        "private": False,
+        "attachments": [chatwoot_file["blob_id"]],
+    }
+    response = requests.post(
+        _chatwoot_url(config, f"conversations/{conversation_id}/messages"),
+        headers=_chatwoot_headers(config),
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+    return _parse_chatwoot_response(response, "send attachment message via Chatwoot")
+
+
+def _find_or_create_chatwoot_contact(config, doc=None, automation=None, recipient=None, display_name=None):
     phone_number = _chatwoot_phone_number(recipient)
     contact = _find_chatwoot_contact(config, phone_number, recipient)
     if contact:
         return contact
 
     payload = {
-        "name": _get_contact_name(doc, automation),
+        "name": display_name or _get_contact_name(doc, automation),
         "phone_number": phone_number,
         "inbox_id": int(config["chatwoot_inbox_id"]),
     }
@@ -562,6 +747,33 @@ def _chatwoot_headers(config):
 
 def _chatwoot_url(config, endpoint):
     return f"{config['chatwoot_base_url']}/api/v1/accounts/{config['chatwoot_account_id']}/{endpoint}"
+
+
+def _parse_report_filters(filters):
+    if isinstance(filters, str):
+        return frappe._dict(json.loads(filters))
+    return frappe._dict(filters or {})
+
+
+def _build_customer_report_pdf(report_name, filters, include_ar, include_ledger):
+    try:
+        from customer_ledger.customer_ledger.report.customer_ledger_report import customer_ledger_report
+    except ImportError as exc:
+        frappe.throw(f"Customer Ledger app is required to send {report_name} on WhatsApp: {exc}")
+
+    customer_ledger_report.download_customer_ledger_pdf(
+        filters,
+        include_ar=include_ar,
+        include_ledger=include_ledger,
+    )
+    pdf_bytes = frappe.local.response.filecontent
+    filename = frappe.local.response.filename
+    frappe.local.response.type = "json"
+    frappe.local.response.filecontent = None
+    frappe.local.response.filename = None
+    if not pdf_bytes or not filename:
+        frappe.throw(f"Unable to generate PDF for {report_name}.")
+    return filename, pdf_bytes
 
 
 def _parse_chatwoot_response(response, action):
