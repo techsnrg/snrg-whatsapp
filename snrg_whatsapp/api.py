@@ -405,25 +405,33 @@ def _get_customer_recipients(customer_name):
     recipients = []
     customer_mobile = _normalize_phone(customer_doc.get("custom_mobile_number"))
     if customer_mobile:
-        recipients.append(
-            {
-                "kind": "customer",
-                "label": customer_doc.customer_name or customer_doc.name,
-                "button_label": f"Customer: {customer_doc.customer_name or customer_doc.name} ({customer_mobile})",
-                "mobile": customer_mobile,
-            }
-        )
+        button_label = f"Customer: {customer_doc.customer_name or customer_doc.name} ({customer_mobile})"
+    else:
+        button_label = f"Customer: {customer_doc.customer_name or customer_doc.name} (No Mobile)"
+        
+    recipients.append(
+        {
+            "kind": "customer",
+            "label": customer_doc.customer_name or customer_doc.name,
+            "button_label": button_label,
+            "mobile": customer_mobile,
+        }
+    )
 
     for row in customer_doc.get("sales_team") or []:
         mobile = _normalize_phone(row.get("custom_official_mobile_number"))
-        if not mobile:
-            continue
         sales_person = row.get("sales_person") or "Sales Person"
+        
+        if not mobile:
+            button_label = f"Sales: {sales_person} (No Mobile)"
+        else:
+            button_label = f"Sales: {sales_person} ({mobile})"
+            
         recipients.append(
             {
                 "kind": "sales_person",
                 "label": sales_person,
-                "button_label": f"Sales: {sales_person} ({mobile})",
+                "button_label": button_label,
                 "mobile": mobile,
             }
         )

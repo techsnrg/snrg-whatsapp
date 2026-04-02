@@ -32,9 +32,10 @@ frappe.provide("snrg_whatsapp");
 		report.__snrg_whatsapp_labels = [];
 	}
 
-	function removeReportLauncher(report) {
-		if (!report || !report.page) return;
-		report.page.remove_inner_button(__("Load WhatsApp"));
+	function clearReportButtons(report) {
+		if (!report.__snrg_whatsapp_labels) return;
+		report.__snrg_whatsapp_labels.forEach((label) => report.page.remove_inner_button(label, GROUP_LABEL));
+		report.__snrg_whatsapp_labels = [];
 	}
 
 	async function fetchRecipients(args) {
@@ -129,134 +130,55 @@ frappe.provide("snrg_whatsapp");
 		}
 	};
 
-	snrg_whatsapp.bindReportButtons = function (report, reportName) {
-		if (!report || report.__snrg_whatsapp_bound) return;
-		report.__snrg_whatsapp_bound = true;
+	function clearReportButtons(report) {
+		if (!report.__snrg_whatsapp_labels) return;
+		report.__snrg_whatsapp_labels.forEach((label) => report.page.remove_inner_button(label, GROUP_LABEL));
 		report.__snrg_whatsapp_labels = [];
-
-		const rebuild = async () => {
-			clearReportButtons(report);
-
-			const customer = report.get_filter_value("customer");
-			if (!customer) return;
-
-			try {
-				const recipients = await fetchRecipients({ customer });
-				if (!recipients.length) return;
-
-				report.__snrg_whatsapp_labels = [];
-				recipients.forEach((recipient) => {
-					const label = normalizeRecipientLabel(recipient);
-					report.page.add_inner_button(label, () => sendReport(reportName, report, recipient), GROUP_LABEL);
-					report.__snrg_whatsapp_labels.push(label);
-				});
-			} catch (error) {
-				console.error("Failed to build report WhatsApp buttons", error);
-				alertError(__("Could not load WhatsApp recipients."));
-			}
-		};
-
-		report.__snrg_whatsapp_rebuild = rebuild;
-
-		const customerFilter = report.get_filter && report.get_filter("customer");
-		if (customerFilter && !customerFilter.__snrg_whatsapp_bound) {
-			customerFilter.__snrg_whatsapp_bound = true;
-			const originalOnChange = customerFilter.df.onchange;
-			customerFilter.df.onchange = function () {
-				if (originalOnChange) {
-					originalOnChange.apply(this, arguments);
-				}
-				frappe.after_ajax(() => rebuild());
-			};
-		}
-
-		setTimeout(rebuild, 300);
-	};
+	}
 
 	snrg_whatsapp.loadReportButtons = async function (report, reportName) {
 		if (!report || !report.page) return;
+		const customer = report.get_filter_value("customer");
+		
+		removeReportLauncher(report);
+		clearReportButtons(report);
+		
+		if (!customer) return;
+
+		report.__whatsapp_last_customer = customer;
+
+		const placeholder = __("Evaluating...");
+		report.page.add_inner_button(placeholder, () => {}, GROUP_LABEL);
+		report.__snrg_whatsapp_labels = [placeholder];
+
+		let recipients = [];
+		try { recipients = await fetchRecipients({ customer }); }
+		catch (error) { console.error(error); }
+
+		// Filter changed mid-flight check
+		if (report.__whatsapp_last_customer !== customer) return;
+
 		clearReportButtons(report);
 
-		const customer = report.get_filter_value("customer");
-		if (!customer) {
-			frappe.msgprint(__("Please select a Customer first."));
+		if (!recipients.length) {
+			const label = __("No WhatsApp recipients");
+			report.page.add_inner_button(label, () => {
+				frappe.msgprint(__("No WhatsApp recipients are configured for this customer."));
+			}, GROUP_LABEL);
+			report.__snrg_whatsapp_labels.push(label);
 			return;
 		}
 
-		try {
-			const recipients = await fetchRecipients({ customer });
-			if (!recipients.length) {
-				frappe.msgprint(__("No WhatsApp recipients found for this customer."));
-				return;
-			}
-
-			report.__snrg_whatsapp_labels = [];
-			recipients.forEach((recipient) => {
-				const label = normalizeRecipientLabel(recipient);
-				report.page.add_inner_button(label, () => sendReport(reportName, report, recipient), GROUP_LABEL);
-				report.__snrg_whatsapp_labels.push(label);
-			});
-			frappe.show_alert({ message: __("WhatsApp recipients loaded"), indicator: "green" });
-		} catch (error) {
-			console.error("Failed to build report WhatsApp buttons", error);
-			alertError(__("Could not load WhatsApp recipients."));
-		}
-	};
-
-	function patchReport(reportName) {
-		const reportConfig = frappe.query_reports && frappe.query_reports[reportName];
-		if (!reportConfig || reportConfig.__snrg_whatsapp_patched) return !!reportConfig;
-
-		const originalOnload = reportConfig.onload;
-		reportConfig.onload = function (report) {
-			if (originalOnload) {
-				originalOnload(report);
-			}
-			snrg_whatsapp.bindReportButtons(report, reportName);
-		};
-		reportConfig.__snrg_whatsapp_patched = true;
-		return true;
-	}
-
-	function patchReportsWithRetry(attempt) {
-		const patched = REPORT_NAMES.map((name) => patchReport(name));
-		if (patched.every(Boolean) || attempt > 20) return;
-		setTimeout(() => patchReportsWithRetry(attempt + 1), 400);
-	}
-
-	function wrapQueryReportLifecycle() {
-		if (!frappe.views || !frappe.views.QueryReport) return false;
-		if (frappe.views.QueryReport.__snrg_whatsapp_wrapped) return true;
-
-		const originalRefreshReport = frappe.views.QueryReport.prototype.refresh_report;
-		frappe.views.QueryReport.prototype.refresh_report = function () {
-			const result = originalRefreshReport.apply(this, arguments);
-			Promise.resolve(result).then(() => {
-				removeReportLauncher(this);
-				clearReportButtons(this);
-				if (!REPORT_NAMES.includes(this.report_name)) return;
-				frappe.after_ajax(() => {
-					setTimeout(() => {
-						this.page.add_inner_button(
-							__("Load WhatsApp"),
-							() => snrg_whatsapp.loadReportButtons(this, this.report_name)
-						);
-					}, 300);
-				});
-			});
-			return result;
-		};
-
-		frappe.views.QueryReport.__snrg_whatsapp_wrapped = true;
-		return true;
-	}
-
-	wrapQueryReportLifecycle();
-	patchReportsWithRetry(0);
-	if (frappe.router && frappe.router.on) {
-		frappe.router.on("change", () => {
-			wrapQueryReportLifecycle();
-			patchReportsWithRetry(0);
+		recipients.forEach((recipient) => {
+			const label = normalizeRecipientLabel(recipient);
+			report.page.add_inner_button(label, () => {
+				if (!recipient.mobile) {
+					frappe.msgprint(__("No mobile number available. Please update the contact."));
+					return;
+				}
+				sendReport(reportName, report, recipient);
+			}, GROUP_LABEL);
+			report.__snrg_whatsapp_labels.push(label);
 		});
-	}
+	};
 })();
