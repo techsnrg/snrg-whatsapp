@@ -5,7 +5,7 @@ app_description = "WhatsApp automations for ERPNext using Chatwoot"
 app_email = "hello@aerele.in"
 app_license = "mit"
 
-app_include_js = "snrg_whatsapp.bundle.js"
+app_include_js = "/assets/snrg_whatsapp/js/snrg_whatsapp_ui.js"
 
 doctype_js = {
     "Quotation": "public/js/quotation.js",
