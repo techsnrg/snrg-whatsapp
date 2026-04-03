@@ -3,6 +3,16 @@ frappe.provide("snrg_whatsapp");
 (function () {
 	const GROUP_LABEL = __("Send WhatsApp");
 	const REPORT_NAMES = ["Customer Ledger Report", "Customer AR Report"];
+	const REPORT_SEND_OPTIONS = {
+		"Customer Ledger Report": [
+			{ label: __("Send Ledger"), include_ar: 0, include_ledger: 1 },
+			{ label: __("Send Ledger + AR"), include_ar: 1, include_ledger: 1 },
+		],
+		"Customer AR Report": [
+			{ label: __("Send AR"), include_ar: 1, include_ledger: 0 },
+			{ label: __("Send Ledger + AR"), include_ar: 1, include_ledger: 1 },
+		],
+	};
 
 	function alertSuccess(message) {
 		frappe.show_alert({ message, indicator: "green" });
@@ -61,7 +71,7 @@ frappe.provide("snrg_whatsapp");
 		}
 	}
 
-	async function sendReport(reportName, report, recipient) {
+	async function sendReport(reportName, report, recipient, option) {
 		const filters = report.get_filter_values();
 		if (!filters || !filters.customer) {
 			frappe.msgprint(__("Please select a Customer before sending this report on WhatsApp."));
@@ -76,11 +86,13 @@ frappe.provide("snrg_whatsapp");
 					recipient_mobile: recipient.mobile,
 					recipient_label: label,
 					filters: JSON.stringify(filters),
+					include_ar: option.include_ar,
+					include_ledger: option.include_ledger,
 				},
 				freeze: true,
 				freeze_message: __("Sending WhatsApp…"),
 			});
-			alertSuccess(getMessage(response, __("{0} sent to {1}", [reportName, label])));
+			alertSuccess(getMessage(response, __("{0} sent to {1}", [option.label, label])));
 		} catch (error) {
 			console.error("Failed to send report on WhatsApp", error);
 			alertError(__("Could not send WhatsApp report."));
@@ -156,16 +168,22 @@ frappe.provide("snrg_whatsapp");
 			return;
 		}
 
+		const options = REPORT_SEND_OPTIONS[reportName] || [
+			{ label: __("Send Report"), include_ar: 0, include_ledger: 1 },
+		];
+
 		recipients.forEach((recipient) => {
-			const label = normalizeRecipientLabel(recipient);
-			report.page.add_inner_button(label, () => {
-				if (!recipient.mobile) {
-					frappe.msgprint(__("No mobile number available. Please update the contact."));
-					return;
-				}
-				sendReport(reportName, report, recipient);
-			}, GROUP_LABEL);
-			report.__snrg_whatsapp_labels.push(label);
+			options.forEach((option) => {
+				const label = `${normalizeRecipientLabel(recipient)} - ${option.label}`;
+				report.page.add_inner_button(label, () => {
+					if (!recipient.mobile) {
+						frappe.msgprint(__("No mobile number available. Please update the contact."));
+						return;
+					}
+					sendReport(reportName, report, recipient, option);
+				}, GROUP_LABEL);
+				report.__snrg_whatsapp_labels.push(label);
+			});
 		});
 	};
 })();

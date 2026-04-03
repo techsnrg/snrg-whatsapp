@@ -14,13 +14,21 @@ MANUAL_DOC_SEND_GROUP = "Send WhatsApp"
 SUPPORTED_REPORTS = {
     "Customer Ledger Report": {
         "label": "Customer Ledger",
-        "include_ar": 0,
-        "include_ledger": 1,
+        "single_include_ar": 0,
+        "single_include_ledger": 1,
+        "combined_include_ar": 1,
+        "combined_include_ledger": 1,
+        "single_action_label": "Ledger",
+        "combined_action_label": "Ledger + AR",
     },
     "Customer AR Report": {
         "label": "Customer AR",
-        "include_ar": 1,
-        "include_ledger": 0,
+        "single_include_ar": 1,
+        "single_include_ledger": 0,
+        "combined_include_ar": 1,
+        "combined_include_ledger": 1,
+        "single_action_label": "AR",
+        "combined_action_label": "Ledger + AR",
     },
 }
 
@@ -161,7 +169,14 @@ def send_document_whatsapp_manual(doctype, docname, recipient_mobile, recipient_
 
 
 @frappe.whitelist()
-def send_customer_report_whatsapp(report_name, recipient_mobile, recipient_label=None, filters=None):
+def send_customer_report_whatsapp(
+    report_name,
+    recipient_mobile,
+    recipient_label=None,
+    filters=None,
+    include_ar=None,
+    include_ledger=None,
+):
     report_config = SUPPORTED_REPORTS.get(report_name)
     if not report_config:
         frappe.throw(f"Unsupported report for WhatsApp send: {report_name}")
@@ -170,18 +185,22 @@ def send_customer_report_whatsapp(report_name, recipient_mobile, recipient_label
     if not parsed_filters.get("customer"):
         frappe.throw("Customer filter is required before sending this report on WhatsApp.")
 
+    include_ar = cint_or_none(include_ar, default=report_config["single_include_ar"])
+    include_ledger = cint_or_none(include_ledger, default=report_config["single_include_ledger"])
+    action_label = _get_report_action_label(report_config, include_ar, include_ledger)
+
     config = _get_common_config()
     filename, pdf_bytes = _build_customer_report_pdf(
         report_name=report_name,
         filters=parsed_filters,
-        include_ar=report_config["include_ar"],
-        include_ledger=report_config["include_ledger"],
+        include_ar=include_ar,
+        include_ledger=include_ledger,
     )
 
     customer_doc = frappe.get_doc("Customer", parsed_filters.customer)
     content = (
         f"Dear {_safe_name(customer_doc.customer_name)},\n\n"
-        f"Please find attached the {report_config['label']} report for {customer_doc.customer_name}.\n\n"
+        f"Please find attached the {action_label} report for {customer_doc.customer_name}.\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
     response = _send_attachment_message(
@@ -193,9 +212,18 @@ def send_customer_report_whatsapp(report_name, recipient_mobile, recipient_label
         contact_name=_safe_name(customer_doc.customer_name),
     )
     return {
-        "message": f"{report_name} sent on WhatsApp to {recipient_label or recipient_mobile}",
+        "message": f"{action_label} sent on WhatsApp to {recipient_label or recipient_mobile}",
         "response": response,
     }
+
+
+def _get_report_action_label(report_config, include_ar, include_ledger):
+    if cint_or_none(include_ar) == cint_or_none(report_config["combined_include_ar"]) and cint_or_none(
+        include_ledger
+    ) == cint_or_none(report_config["combined_include_ledger"]):
+        return report_config["combined_action_label"]
+
+    return report_config["single_action_label"]
 
 
 def _enqueue_whatsapp_send(doctype, docname):
