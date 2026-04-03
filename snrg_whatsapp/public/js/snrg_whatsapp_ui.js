@@ -5,12 +5,32 @@ frappe.provide("snrg_whatsapp");
 	const REPORT_NAMES = ["Customer Ledger Report", "Customer AR Report"];
 	const REPORT_SEND_OPTIONS = {
 		"Customer Ledger Report": [
-			{ label: __("Ledger Report"), include_ar: 0, include_ledger: 1 },
-			{ label: __("Ledger + AR Report"), include_ar: 1, include_ledger: 1 },
+			{
+				label: __("Ledger Report"),
+				group_label: __("Send WhatsApp Ledger"),
+				include_ar: 0,
+				include_ledger: 1,
+			},
+			{
+				label: __("Ledger + AR Report"),
+				group_label: __("Send WhatsApp Ledger + AR"),
+				include_ar: 1,
+				include_ledger: 1,
+			},
 		],
 		"Customer AR Report": [
-			{ label: __("AR Report"), include_ar: 1, include_ledger: 0 },
-			{ label: __("Ledger + AR Report"), include_ar: 1, include_ledger: 1 },
+			{
+				label: __("AR Report"),
+				group_label: __("Send WhatsApp AR"),
+				include_ar: 1,
+				include_ledger: 0,
+			},
+			{
+				label: __("Ledger + AR Report"),
+				group_label: __("Send WhatsApp Ledger + AR"),
+				include_ar: 1,
+				include_ledger: 1,
+			},
 		],
 	};
 
@@ -38,7 +58,14 @@ frappe.provide("snrg_whatsapp");
 
 	function clearReportButtons(report) {
 		if (!report.__snrg_whatsapp_labels) return;
-		report.__snrg_whatsapp_labels.forEach((label) => report.page.remove_inner_button(label, GROUP_LABEL));
+		report.__snrg_whatsapp_labels.forEach((entry) => {
+			if (typeof entry === "string") {
+				report.page.remove_inner_button(entry, GROUP_LABEL);
+				return;
+			}
+
+			report.page.remove_inner_button(entry.label, entry.group_label || GROUP_LABEL);
+		});
 		report.__snrg_whatsapp_labels = [];
 	}
 
@@ -169,20 +196,28 @@ frappe.provide("snrg_whatsapp");
 		}
 
 		const options = REPORT_SEND_OPTIONS[reportName] || [
-			{ label: __("Send Report"), include_ar: 0, include_ledger: 1 },
+			{
+				label: __("Send Report"),
+				group_label: GROUP_LABEL,
+				include_ar: 0,
+				include_ledger: 1,
+			},
 		];
 
 		recipients.forEach((recipient) => {
 			options.forEach((option) => {
-				const label = `${normalizeRecipientLabel(recipient)} - ${option.label}`;
+				const label = normalizeRecipientLabel(recipient);
 				report.page.add_inner_button(label, () => {
 					if (!recipient.mobile) {
 						frappe.msgprint(__("No mobile number available. Please update the contact."));
 						return;
 					}
 					sendReport(reportName, report, recipient, option);
-				}, GROUP_LABEL);
-				report.__snrg_whatsapp_labels.push(label);
+				}, option.group_label || GROUP_LABEL);
+				report.__snrg_whatsapp_labels.push({
+					label,
+					group_label: option.group_label || GROUP_LABEL,
+				});
 			});
 		});
 	};
