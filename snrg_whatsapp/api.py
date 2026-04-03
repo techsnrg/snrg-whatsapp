@@ -188,6 +188,7 @@ def send_customer_report_whatsapp(
     include_ar = cint_or_none(include_ar, default=report_config["single_include_ar"])
     include_ledger = cint_or_none(include_ledger, default=report_config["single_include_ledger"])
     action_label = _get_report_action_label(report_config, include_ar, include_ledger)
+    report_date = formatdate(parsed_filters.get("to_date") or frappe.utils.nowdate())
 
     config = _get_common_config()
     document_config = _get_report_template_config()
@@ -201,7 +202,8 @@ def send_customer_report_whatsapp(
     customer_doc = frappe.get_doc("Customer", parsed_filters.customer)
     content = (
         f"Dear {_safe_name(customer_doc.customer_name)},\n\n"
-        f"Please find attached the {action_label} report for {customer_doc.customer_name}.\n\n"
+        f"Please find attached your account statement as on {report_date}.\n\n"
+        "Kindly review the details and let us know in case of any discrepancy or clarification required.\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
     response = _send_report_template_message(
@@ -212,7 +214,7 @@ def send_customer_report_whatsapp(
         filename=filename,
         file_bytes=pdf_bytes,
         contact_name=_safe_name(customer_doc.customer_name),
-        action_label=action_label,
+        report_date=report_date,
     )
     return {
         "message": f"{action_label} sent on WhatsApp to {recipient_label or recipient_mobile}",
@@ -704,7 +706,7 @@ def _send_report_template_message(
     filename,
     file_bytes,
     contact_name,
-    action_label,
+    report_date,
 ):
     chatwoot_file = _upload_file_bytes_to_chatwoot(config, file_bytes, filename)
     contact = _find_or_create_chatwoot_contact(
@@ -735,7 +737,7 @@ def _send_report_template_message(
                 },
                 "body": {
                     "1": contact_name,
-                    "2": action_label,
+                    "2": report_date,
                 },
             },
         },
@@ -746,7 +748,7 @@ def _send_report_template_message(
         json=payload,
         timeout=REQUEST_TIMEOUT,
     )
-    return _parse_chatwoot_response(response, f"send {action_label} template via Chatwoot")
+    return _parse_chatwoot_response(response, "send customer report template via Chatwoot")
 
 
 def _find_or_create_chatwoot_contact(config, doc=None, automation=None, recipient=None, display_name=None):
