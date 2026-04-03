@@ -179,7 +179,7 @@
    "reqd": 1
   },
   {
-   "default": "Payment Receipt",
+   "default": "Payment Entry",
    "fieldname": "whatsapp_payment_entry_print_format",
    "fieldtype": "Data",
    "label": "Payment Receipt Print Format"

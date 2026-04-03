@@ -91,6 +91,7 @@ AUTOMATIONS = {
         "template_name_default": "payment_entry_confirmation",
         "template_language_key": "whatsapp_payment_entry_template_language",
         "print_format_key": "whatsapp_payment_entry_print_format",
+        "print_format_default": "Payment Entry",
         "pay_template_name_key": "whatsapp_payment_pay_template_name",
         "pay_template_name_default": "payment_pay_erpnext",
         "pay_template_language_key": "whatsapp_payment_pay_template_language",
@@ -376,7 +377,9 @@ def _get_document_config(doc, automation):
             "template_language": _get_whatsapp_setting(
                 automation["pay_template_language_key"], default=DEFAULT_TEMPLATE_LANGUAGE
             ),
-            "print_format": _get_whatsapp_setting(automation["print_format_key"]),
+            "print_format": _get_whatsapp_setting(
+                automation["print_format_key"], default=automation.get("print_format_default")
+            ),
         }
 
     return {
@@ -386,7 +389,9 @@ def _get_document_config(doc, automation):
         "template_language": _get_whatsapp_setting(
             automation["template_language_key"], default=DEFAULT_TEMPLATE_LANGUAGE
         ),
-        "print_format": _get_whatsapp_setting(automation["print_format_key"]),
+        "print_format": _get_whatsapp_setting(
+            automation["print_format_key"], default=automation.get("print_format_default")
+        ),
     }
 
 
