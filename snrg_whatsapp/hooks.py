@@ -8,8 +8,8 @@ app_license = "mit"
 app_include_js = "/assets/snrg_whatsapp/js/snrg_whatsapp_ui.js"
 
 doctype_js = {
-    "Quotation": "public/js/quotation.js",
-    "Sales Invoice": "public/js/sales_invoice.js",
+    "Quotation": "public/js/document_whatsapp.js",
+    "Sales Invoice": "public/js/document_whatsapp.js",
 }
 
 doc_events = {

@@ -207,6 +207,7 @@ def _enqueue_whatsapp_send(doctype, docname):
         f"snrg_whatsapp.api.{automation['send_fn']}",
         queue="short",
         timeout=300,
+        enqueue_after_commit=True,
         **{automation["name_key"]: docname},
     )
 
