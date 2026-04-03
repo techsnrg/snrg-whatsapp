@@ -91,6 +91,9 @@ AUTOMATIONS = {
         "template_name_default": "payment_entry_confirmation",
         "template_language_key": "whatsapp_payment_entry_template_language",
         "print_format_key": "whatsapp_payment_entry_print_format",
+        "pay_template_name_key": "whatsapp_payment_pay_template_name",
+        "pay_template_name_default": "payment_pay_erpnext",
+        "pay_template_language_key": "whatsapp_payment_pay_template_language",
         "send_marker": "SNRG WhatsApp payment entry sent",
         "failure_marker": "SNRG WhatsApp payment entry failed",
         "event_name": "payment_entry_whatsapp_sent",
@@ -100,7 +103,6 @@ AUTOMATIONS = {
         "doc_date_field": "posting_date",
         "party_field": "party_name",
         "party_type_field": "party_type",
-        "party_type": "Customer",
         "customer_name_field": "party_name",
     },
 }
@@ -365,6 +367,18 @@ def _get_document_config(doc, automation):
             ),
         }
 
+    if doc.doctype == "Payment Entry" and (doc.get("payment_type") or "") == "Pay":
+        return {
+            "template_name": _get_whatsapp_setting(
+                automation["pay_template_name_key"],
+                default=automation["pay_template_name_default"],
+            ),
+            "template_language": _get_whatsapp_setting(
+                automation["pay_template_language_key"], default=DEFAULT_TEMPLATE_LANGUAGE
+            ),
+            "print_format": _get_whatsapp_setting(automation["print_format_key"]),
+        }
+
     return {
         "template_name": _get_whatsapp_setting(
             automation["template_name_key"], default=automation["template_name_default"]
@@ -415,6 +429,15 @@ def _get_whatsapp_settings():
 
 
 def _is_eligible_doc(doc, automation):
+    if doc.doctype == "Payment Entry":
+        payment_type = doc.get("payment_type") or ""
+        party_type = doc.get("party_type") or ""
+        if payment_type == "Receive":
+            return party_type == "Customer"
+        if payment_type == "Pay":
+            return party_type == "Supplier"
+        return False
+
     expected_party_type = automation.get("party_type")
     party_type_field = automation.get("party_type_field")
     if expected_party_type and party_type_field and doc.get(party_type_field) != expected_party_type:
@@ -434,10 +457,8 @@ def _get_recipient_number(doc, automation):
     party_name = doc.get(party_field) if party_field else None
     resolved_party_type = party_type or (doc.get(party_type_field) if party_type_field else None)
 
-    if party_name and resolved_party_type == "Customer":
-        candidates.extend(_get_customer_mobile_candidates(party_name))
-    elif party_name and resolved_party_type == "Lead":
-        candidates.append(frappe.db.get_value("Lead", party_name, "mobile_no"))
+    if party_name and resolved_party_type:
+        candidates.extend(_get_party_mobile_candidates(resolved_party_type, party_name))
 
     contact_person_field = automation.get("contact_person_field")
     if contact_person_field and doc.get(contact_person_field):
@@ -462,6 +483,18 @@ def _get_recipient_number(doc, automation):
     return None
 
 
+def _get_party_mobile_candidates(party_type, party_name):
+    if party_type == "Customer":
+        return _get_customer_mobile_candidates(party_name)
+    if party_type == "Lead":
+        return _get_linked_contact_mobile_candidates("Lead", party_name) + [
+            frappe.db.get_value("Lead", party_name, "mobile_no")
+        ]
+    if party_type == "Supplier":
+        return _get_supplier_mobile_candidates(party_name)
+    return _get_linked_contact_mobile_candidates(party_type, party_name)
+
+
 def _get_customer_mobile_candidates(customer_name):
     if not customer_name or not frappe.db.exists("Customer", customer_name):
         return []
@@ -476,15 +509,36 @@ def _get_customer_mobile_candidates(customer_name):
     if customer:
         candidates.extend([customer.mobile_no, customer.custom_mobile_number])
 
+    candidates.extend(_get_linked_contact_mobile_candidates("Customer", customer_name))
+
+    return candidates
+
+
+def _get_supplier_mobile_candidates(supplier_name):
+    if not supplier_name or not frappe.db.exists("Supplier", supplier_name):
+        return []
+
+    candidates = []
+    for fieldname in ("mobile_no", "phone"):
+        if frappe.db.has_column("Supplier", fieldname):
+            candidates.append(frappe.db.get_value("Supplier", supplier_name, fieldname))
+
+    candidates.extend(_get_linked_contact_mobile_candidates("Supplier", supplier_name))
+
+    return candidates
+
+
+def _get_linked_contact_mobile_candidates(link_doctype, link_name):
     dynamic_links = frappe.get_all(
         "Dynamic Link",
         filters={
-            "link_doctype": "Customer",
-            "link_name": customer_name,
+            "link_doctype": link_doctype,
+            "link_name": link_name,
             "parenttype": "Contact",
         },
         pluck="parent",
     )
+    candidates = []
     if dynamic_links:
         contacts = frappe.get_all(
             "Contact",
@@ -855,6 +909,14 @@ def _build_template_body(doc, automation):
         }
 
     if doc.doctype == "Payment Entry":
+        if (doc.get("payment_type") or "") == "Pay":
+            return {
+                "1": _get_contact_name(doc, automation),
+                "2": _format_amount(_get_payment_entry_amount(doc)),
+                "3": formatdate(doc.get(automation["doc_date_field"])),
+                "4": doc.get("reference_no") or doc.name,
+            }
+
         return {
             "1": _get_contact_name(doc, automation),
             "2": _format_amount(_get_payment_entry_amount(doc)),
@@ -904,6 +966,16 @@ def _render_sales_invoice_preview(doc):
 
 
 def _render_payment_entry_preview(doc):
+    if (doc.get("payment_type") or "") == "Pay":
+        return (
+            f"Dear {_safe_name(doc.party_name)},\n\n"
+            f"This is to inform you that a payment of Rs. {_format_amount(_get_payment_entry_amount(doc))} "
+            f"has been made on {formatdate(doc.posting_date)}.\n\n"
+            f"The transaction reference number is {doc.get('reference_no') or doc.name}.\n\n"
+            "Please find the payment details attached for your reference.\n\n"
+            "Regards,\nSNRG Electricals India Private Limited"
+        )
+
     return (
         f"Dear {_safe_name(doc.party_name)},\n\n"
         f"We acknowledge receipt of your payment of Rs. {_format_amount(_get_payment_entry_amount(doc))} "
