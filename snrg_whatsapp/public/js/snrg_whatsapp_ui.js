@@ -5,12 +5,12 @@ frappe.provide("snrg_whatsapp");
 	const REPORT_NAMES = ["Customer Ledger Report", "Customer AR Report"];
 	const REPORT_SEND_OPTIONS = {
 		"Customer Ledger Report": [
-			{ label: __("Send Ledger"), include_ar: 0, include_ledger: 1 },
-			{ label: __("Send Ledger + AR"), include_ar: 1, include_ledger: 1 },
+			{ label: __("Ledger Report"), include_ar: 0, include_ledger: 1 },
+			{ label: __("Ledger + AR Report"), include_ar: 1, include_ledger: 1 },
 		],
 		"Customer AR Report": [
-			{ label: __("Send AR"), include_ar: 1, include_ledger: 0 },
-			{ label: __("Send Ledger + AR"), include_ar: 1, include_ledger: 1 },
+			{ label: __("AR Report"), include_ar: 1, include_ledger: 0 },
+			{ label: __("Ledger + AR Report"), include_ar: 1, include_ledger: 1 },
 		],
 	};
 
