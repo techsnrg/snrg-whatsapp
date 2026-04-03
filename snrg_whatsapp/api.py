@@ -345,7 +345,7 @@ def _get_recipient_number(doc, automation):
     resolved_party_type = party_type or (doc.get(party_type_field) if party_type_field else None)
 
     if party_name and resolved_party_type == "Customer":
-        candidates.append(frappe.db.get_value("Customer", party_name, "mobile_no"))
+        candidates.extend(_get_customer_mobile_candidates(party_name))
     elif party_name and resolved_party_type == "Lead":
         candidates.append(frappe.db.get_value("Lead", party_name, "mobile_no"))
 
@@ -370,6 +370,41 @@ def _get_recipient_number(doc, automation):
             return normalized
 
     return None
+
+
+def _get_customer_mobile_candidates(customer_name):
+    if not customer_name or not frappe.db.exists("Customer", customer_name):
+        return []
+
+    customer = frappe.db.get_value(
+        "Customer",
+        customer_name,
+        ["mobile_no", "custom_mobile_number"],
+        as_dict=True,
+    )
+    candidates = []
+    if customer:
+        candidates.extend([customer.mobile_no, customer.custom_mobile_number])
+
+    dynamic_links = frappe.get_all(
+        "Dynamic Link",
+        filters={
+            "link_doctype": "Customer",
+            "link_name": customer_name,
+            "parenttype": "Contact",
+        },
+        pluck="parent",
+    )
+    if dynamic_links:
+        contacts = frappe.get_all(
+            "Contact",
+            filters={"name": ["in", dynamic_links]},
+            fields=["mobile_no", "phone"],
+        )
+        for contact in contacts:
+            candidates.extend([contact.get("mobile_no"), contact.get("phone")])
+
+    return candidates
 
 
 def _resolve_customer_for_manual_send(doctype=None, docname=None, customer=None):

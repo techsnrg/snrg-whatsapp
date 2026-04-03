@@ -32,12 +32,6 @@ frappe.provide("snrg_whatsapp");
 		report.__snrg_whatsapp_labels = [];
 	}
 
-	function clearReportButtons(report) {
-		if (!report.__snrg_whatsapp_labels) return;
-		report.__snrg_whatsapp_labels.forEach((label) => report.page.remove_inner_button(label, GROUP_LABEL));
-		report.__snrg_whatsapp_labels = [];
-	}
-
 	async function fetchRecipients(args) {
 		const response = await frappe.call({
 			method: "snrg_whatsapp.api.get_manual_whatsapp_recipients",
@@ -130,19 +124,12 @@ frappe.provide("snrg_whatsapp");
 		}
 	};
 
-	function clearReportButtons(report) {
-		if (!report.__snrg_whatsapp_labels) return;
-		report.__snrg_whatsapp_labels.forEach((label) => report.page.remove_inner_button(label, GROUP_LABEL));
-		report.__snrg_whatsapp_labels = [];
-	}
-
 	snrg_whatsapp.loadReportButtons = async function (report, reportName) {
 		if (!report || !report.page) return;
 		const customer = report.get_filter_value("customer");
-		
-		removeReportLauncher(report);
+
 		clearReportButtons(report);
-		
+
 		if (!customer) return;
 
 		report.__whatsapp_last_customer = customer;
