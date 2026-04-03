@@ -16,6 +16,9 @@
   "whatsapp_sales_invoice_template_name",
   "whatsapp_sales_invoice_template_language",
   "whatsapp_sales_invoice_print_format",
+  "report_section",
+  "whatsapp_report_template_name",
+  "whatsapp_report_template_language",
   "payment_section",
   "enable_payment_entry_whatsapp_on_submit",
   "whatsapp_payment_entry_template_name",
@@ -91,6 +94,25 @@
    "fieldname": "whatsapp_sales_invoice_print_format",
    "fieldtype": "Data",
    "label": "Sales Invoice Print Format"
+  },
+  {
+   "fieldname": "report_section",
+   "fieldtype": "Section Break",
+   "label": "Customer Reports"
+  },
+  {
+   "default": "customer_ledger_statement",
+   "fieldname": "whatsapp_report_template_name",
+   "fieldtype": "Data",
+   "label": "Report Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en",
+   "fieldname": "whatsapp_report_template_language",
+   "fieldtype": "Data",
+   "label": "Report Template Language",
+   "reqd": 1
   },
   {
    "fieldname": "payment_section",

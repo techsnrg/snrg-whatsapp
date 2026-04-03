@@ -190,6 +190,7 @@ def send_customer_report_whatsapp(
     action_label = _get_report_action_label(report_config, include_ar, include_ledger)
 
     config = _get_common_config()
+    document_config = _get_report_template_config()
     filename, pdf_bytes = _build_customer_report_pdf(
         report_name=report_name,
         filters=parsed_filters,
@@ -203,13 +204,15 @@ def send_customer_report_whatsapp(
         f"Please find attached the {action_label} report for {customer_doc.customer_name}.\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
-    response = _send_attachment_message(
+    response = _send_report_template_message(
         config=config,
+        document_config=document_config,
         recipient=recipient_mobile,
         content=content,
         filename=filename,
         file_bytes=pdf_bytes,
         contact_name=_safe_name(customer_doc.customer_name),
+        action_label=action_label,
     )
     return {
         "message": f"{action_label} sent on WhatsApp to {recipient_label or recipient_mobile}",
@@ -348,6 +351,17 @@ def _get_document_config(automation):
             automation["template_language_key"], default=DEFAULT_TEMPLATE_LANGUAGE
         ),
         "print_format": _get_whatsapp_setting(automation["print_format_key"]),
+    }
+
+
+def _get_report_template_config():
+    return {
+        "template_name": _get_whatsapp_setting(
+            "whatsapp_report_template_name", default="customer_ledger_statement"
+        ),
+        "template_language": _get_whatsapp_setting(
+            "whatsapp_report_template_language", default="en"
+        ),
     }
 
 
@@ -680,6 +694,59 @@ def _send_attachment_message(config, recipient, content, filename, file_bytes, c
         timeout=REQUEST_TIMEOUT,
     )
     return _parse_chatwoot_response(response, "send attachment message via Chatwoot")
+
+
+def _send_report_template_message(
+    config,
+    document_config,
+    recipient,
+    content,
+    filename,
+    file_bytes,
+    contact_name,
+    action_label,
+):
+    chatwoot_file = _upload_file_bytes_to_chatwoot(config, file_bytes, filename)
+    contact = _find_or_create_chatwoot_contact(
+        config,
+        display_name=contact_name or recipient,
+        recipient=recipient,
+    )
+    conversation = _find_or_create_chatwoot_conversation(config, contact)
+    conversation_id = conversation.get("id") or conversation.get("display_id")
+    if not conversation_id:
+        frappe.throw(f"Chatwoot conversation ID missing in response: {conversation}")
+
+    payload = {
+        "content": content,
+        "message_type": "outgoing",
+        "content_type": "text",
+        "private": False,
+        "attachments": [chatwoot_file["blob_id"]],
+        "template_params": {
+            "name": document_config["template_name"],
+            "language": document_config["template_language"],
+            "category": "UTILITY",
+            "processed_params": {
+                "header": {
+                    "media_url": chatwoot_file["file_url"],
+                    "media_type": "document",
+                    "media_name": filename,
+                },
+                "body": {
+                    "1": contact_name,
+                    "2": action_label,
+                },
+            },
+        },
+    }
+    response = requests.post(
+        _chatwoot_url(config, f"conversations/{conversation_id}/messages"),
+        headers=_chatwoot_headers(config),
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+    return _parse_chatwoot_response(response, f"send {action_label} template via Chatwoot")
 
 
 def _find_or_create_chatwoot_contact(config, doc=None, automation=None, recipient=None, display_name=None):
