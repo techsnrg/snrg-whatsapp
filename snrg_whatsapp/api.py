@@ -64,6 +64,11 @@ AUTOMATIONS = {
         "template_name_default": "sales_invoice_confirmation",
         "template_language_key": "whatsapp_sales_invoice_template_language",
         "print_format_key": "whatsapp_sales_invoice_print_format",
+        "credit_note_template_name_key": "whatsapp_credit_note_template_name",
+        "credit_note_template_name_default": "credit_note_erpnext",
+        "credit_note_template_language_key": "whatsapp_credit_note_template_language",
+        "credit_note_print_format_key": "whatsapp_credit_note_print_format",
+        "credit_note_print_format_default": "Credit Note New",
         "send_marker": "SNRG WhatsApp sales invoice sent",
         "failure_marker": "SNRG WhatsApp sales invoice failed",
         "event_name": "sales_invoice_whatsapp_sent",
@@ -283,7 +288,7 @@ def _deliver_document_whatsapp(
         return None
 
     config = _get_common_config()
-    document_config = _get_document_config(automation)
+    document_config = _get_document_config(doc, automation)
     recipient = _normalize_phone(recipient_override) or _get_recipient_number(doc, automation)
     if not recipient:
         _add_timeline_note(doc, automation["failure_marker"], "No mobile number found.")
@@ -344,7 +349,22 @@ def _get_common_config():
     return config
 
 
-def _get_document_config(automation):
+def _get_document_config(doc, automation):
+    if doc.doctype == "Sales Invoice" and cint_or_none(doc.get("is_return")) == 1:
+        return {
+            "template_name": _get_whatsapp_setting(
+                automation["credit_note_template_name_key"],
+                default=automation["credit_note_template_name_default"],
+            ),
+            "template_language": _get_whatsapp_setting(
+                automation["credit_note_template_language_key"], default=DEFAULT_TEMPLATE_LANGUAGE
+            ),
+            "print_format": _get_whatsapp_setting(
+                automation["credit_note_print_format_key"],
+                default=automation["credit_note_print_format_default"],
+            ),
+        }
+
     return {
         "template_name": _get_whatsapp_setting(
             automation["template_name_key"], default=automation["template_name_default"]
@@ -863,6 +883,16 @@ def _render_quotation_preview(doc):
 
 
 def _render_sales_invoice_preview(doc):
+    if cint_or_none(doc.get("is_return")) == 1:
+        return (
+            f"Dear {_safe_name(doc.customer_name or doc.customer)},\n\n"
+            f"Your Credit Note {doc.name} dated {formatdate(doc.posting_date)} for amount "
+            f"Rs. {_format_amount(doc.grand_total)} has been generated.\n\n"
+            "Please find the Credit Note document attached for your reference.\n\n"
+            "Kindly review the details and confirm if any changes required.\n\n"
+            "Regards,\nSNRG Electricals India Private Limited"
+        )
+
     return (
         f"Dear {_safe_name(doc.customer_name or doc.customer)},\n\n"
         f"Your invoice {doc.name} dated {formatdate(doc.posting_date)} for amount "

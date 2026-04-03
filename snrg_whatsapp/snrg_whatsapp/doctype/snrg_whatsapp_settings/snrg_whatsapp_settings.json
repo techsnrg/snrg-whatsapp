@@ -16,6 +16,9 @@
   "whatsapp_sales_invoice_template_name",
   "whatsapp_sales_invoice_template_language",
   "whatsapp_sales_invoice_print_format",
+  "whatsapp_credit_note_template_name",
+  "whatsapp_credit_note_template_language",
+  "whatsapp_credit_note_print_format",
   "report_section",
   "whatsapp_report_template_name",
   "whatsapp_report_template_language",
@@ -94,6 +97,26 @@
    "fieldname": "whatsapp_sales_invoice_print_format",
    "fieldtype": "Data",
    "label": "Sales Invoice Print Format"
+  },
+  {
+   "default": "credit_note_erpnext",
+   "fieldname": "whatsapp_credit_note_template_name",
+   "fieldtype": "Data",
+   "label": "Credit Note Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en",
+   "fieldname": "whatsapp_credit_note_template_language",
+   "fieldtype": "Data",
+   "label": "Credit Note Template Language",
+   "reqd": 1
+  },
+  {
+   "default": "Credit Note New",
+   "fieldname": "whatsapp_credit_note_print_format",
+   "fieldtype": "Data",
+   "label": "Credit Note Print Format"
   },
   {
    "fieldname": "report_section",
