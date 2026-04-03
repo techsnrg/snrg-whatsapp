@@ -142,26 +142,26 @@
   {
    "fieldname": "payment_section",
    "fieldtype": "Section Break",
-   "label": "Payment Entry"
+   "label": "Payment Receipt"
   },
   {
    "default": "1",
    "fieldname": "enable_payment_entry_whatsapp_on_submit",
    "fieldtype": "Check",
-   "label": "Enable Payment Entry WhatsApp On Submit"
+   "label": "Enable Payment Receipt WhatsApp On Submit"
   },
   {
    "default": "payment_entry_erpnext",
    "fieldname": "whatsapp_payment_entry_template_name",
    "fieldtype": "Data",
-   "label": "Payment Entry Template Name",
+   "label": "Payment Receipt Template Name",
    "reqd": 1
   },
   {
    "default": "en",
    "fieldname": "whatsapp_payment_entry_template_language",
    "fieldtype": "Data",
-   "label": "Payment Entry Template Language",
+   "label": "Payment Receipt Template Language",
    "reqd": 1
   },
   {
@@ -182,7 +182,7 @@
    "default": "Payment Receipt",
    "fieldname": "whatsapp_payment_entry_print_format",
    "fieldtype": "Data",
-   "label": "Payment Entry Print Format"
+   "label": "Payment Receipt Print Format"
   }
  ],
  "grid_page_length": 50,
