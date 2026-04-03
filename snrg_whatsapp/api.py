@@ -432,6 +432,8 @@ def _is_eligible_doc(doc, automation):
     if doc.doctype == "Payment Entry":
         payment_type = doc.get("payment_type") or ""
         party_type = doc.get("party_type") or ""
+        if party_type == "Employee":
+            return False
         if payment_type == "Receive":
             return party_type == "Customer"
         if payment_type == "Pay":
