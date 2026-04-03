@@ -1,0 +1,150 @@
+{
+ "actions": [],
+ "creation": "2026-04-03 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Setup",
+ "engine": "InnoDB",
+ "field_order": [
+  "settings_note",
+  "quotation_section",
+  "enable_quotation_whatsapp_on_submit",
+  "whatsapp_quotation_template_name",
+  "whatsapp_quotation_template_language",
+  "whatsapp_quotation_print_format",
+  "invoice_section",
+  "enable_sales_invoice_whatsapp_on_submit",
+  "whatsapp_sales_invoice_template_name",
+  "whatsapp_sales_invoice_template_language",
+  "whatsapp_sales_invoice_print_format",
+  "payment_section",
+  "enable_payment_entry_whatsapp_on_submit",
+  "whatsapp_payment_entry_template_name",
+  "whatsapp_payment_entry_template_language",
+  "whatsapp_payment_entry_print_format"
+ ],
+ "fields": [
+  {
+   "fieldname": "settings_note",
+   "fieldtype": "HTML",
+   "label": "Settings Note",
+   "options": "<p>Configure WhatsApp templates, languages, print formats, and automation toggles here. Chatwoot connection credentials stay in <code>site_config.json</code> / Frappe Cloud site config.</p>",
+   "read_only": 1
+  },
+  {
+   "fieldname": "quotation_section",
+   "fieldtype": "Section Break",
+   "label": "Quotation"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_quotation_whatsapp_on_submit",
+   "fieldtype": "Check",
+   "label": "Enable Quotation WhatsApp On Submit"
+  },
+  {
+   "default": "sales_quotation_confirmation",
+   "fieldname": "whatsapp_quotation_template_name",
+   "fieldtype": "Data",
+   "label": "Quotation Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en_US",
+   "fieldname": "whatsapp_quotation_template_language",
+   "fieldtype": "Data",
+   "label": "Quotation Template Language",
+   "reqd": 1
+  },
+  {
+   "default": "Quotation",
+   "fieldname": "whatsapp_quotation_print_format",
+   "fieldtype": "Data",
+   "label": "Quotation Print Format"
+  },
+  {
+   "fieldname": "invoice_section",
+   "fieldtype": "Section Break",
+   "label": "Sales Invoice"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_sales_invoice_whatsapp_on_submit",
+   "fieldtype": "Check",
+   "label": "Enable Sales Invoice WhatsApp On Submit"
+  },
+  {
+   "default": "sales_invoice_erpnext",
+   "fieldname": "whatsapp_sales_invoice_template_name",
+   "fieldtype": "Data",
+   "label": "Sales Invoice Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en",
+   "fieldname": "whatsapp_sales_invoice_template_language",
+   "fieldtype": "Data",
+   "label": "Sales Invoice Template Language",
+   "reqd": 1
+  },
+  {
+   "default": "Sales Invoice New",
+   "fieldname": "whatsapp_sales_invoice_print_format",
+   "fieldtype": "Data",
+   "label": "Sales Invoice Print Format"
+  },
+  {
+   "fieldname": "payment_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Entry"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_payment_entry_whatsapp_on_submit",
+   "fieldtype": "Check",
+   "label": "Enable Payment Entry WhatsApp On Submit"
+  },
+  {
+   "default": "payment_entry_erpnext",
+   "fieldname": "whatsapp_payment_entry_template_name",
+   "fieldtype": "Data",
+   "label": "Payment Entry Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en",
+   "fieldname": "whatsapp_payment_entry_template_language",
+   "fieldtype": "Data",
+   "label": "Payment Entry Template Language",
+   "reqd": 1
+  },
+  {
+   "default": "Payment Receipt",
+   "fieldname": "whatsapp_payment_entry_print_format",
+   "fieldtype": "Data",
+   "label": "Payment Entry Print Format"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-04-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "SNRG WhatsApp",
+ "name": "SNRG WhatsApp Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -313,16 +313,41 @@ def _get_common_config():
 
 def _get_document_config(automation):
     return {
-        "template_name": frappe.conf.get(automation["template_name_key"])
-        or automation["template_name_default"],
-        "template_language": frappe.conf.get(automation["template_language_key"])
-        or DEFAULT_TEMPLATE_LANGUAGE,
-        "print_format": frappe.conf.get(automation["print_format_key"]),
+        "template_name": _get_whatsapp_setting(
+            automation["template_name_key"], default=automation["template_name_default"]
+        ),
+        "template_language": _get_whatsapp_setting(
+            automation["template_language_key"], default=DEFAULT_TEMPLATE_LANGUAGE
+        ),
+        "print_format": _get_whatsapp_setting(automation["print_format_key"]),
     }
 
 
 def _is_send_enabled(automation):
-    return cint_or_none(frappe.conf.get(automation["enable_key"]), default=1) == 1
+    return cint_or_none(_get_whatsapp_setting(automation["enable_key"], default=1), default=1) == 1
+
+
+def _get_whatsapp_setting(key, default=None):
+    settings = _get_whatsapp_settings()
+    if settings:
+        value = settings.get(key)
+        if value not in (None, ""):
+            return value
+
+    config_value = frappe.conf.get(key)
+    if config_value not in (None, ""):
+        return config_value
+
+    return default
+
+
+def _get_whatsapp_settings():
+    try:
+        if not frappe.db.exists("DocType", "SNRG WhatsApp Settings"):
+            return None
+        return frappe.get_cached_doc("SNRG WhatsApp Settings")
+    except Exception:
+        return None
 
 
 def _is_eligible_doc(doc, automation):
