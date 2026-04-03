@@ -1,1 +1,1 @@
-
+snrg_whatsapp.patches.v0_0_1.populate_whatsapp_settings_defaults
