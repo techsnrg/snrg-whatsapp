@@ -17,7 +17,6 @@ Add these keys to `site_config.json` for the ERPNext site:
   "chatwoot_account_id": 1,
   "chatwoot_api_access_token": "YOUR_CHATWOOT_USER_API_TOKEN",
   "chatwoot_inbox_id": 12,
-  "chatwoot_webhook_secret": "YOUR_CHATWOOT_WEBHOOK_SECRET",
   "enable_quotation_whatsapp_on_submit": 1,
   "enable_sales_invoice_whatsapp_on_submit": 1,
   "enable_payment_entry_whatsapp_on_submit": 1,
@@ -47,7 +46,7 @@ bench restart
 
 - The approved WhatsApp template must include a `document` header.
 - Configure a Chatwoot webhook to `POST` inbound message events to `/api/method/snrg_whatsapp.api.handle_chatwoot_confirmation_webhook`.
-- Add `chatwoot_webhook_secret` from Chatwoot to `site_config.json`; the webhook is rejected when the signature is missing or invalid.
+- Add the Chatwoot webhook secret in `SNRG WhatsApp Settings` on Desk. `site_config.json` still works as a fallback for existing setups.
 - The Quotation, Sales Invoice, and Payment Entry submit hooks queue WhatsApp sends in the background.
 - ERPNext sends through Chatwoot, so outgoing messages appear in the Chatwoot conversation thread.
 - Mobile lookup prefers document-level contact mobile, then customer mobile, then contact mobile. Payment Entry can also fall back to linked Sales Invoice contact details.

@@ -4,6 +4,7 @@ import hmac
 import io
 import json
 import re
+import time
 
 import frappe
 import requests
@@ -15,6 +16,7 @@ DEFAULT_TEMPLATE_LANGUAGE = "en_US"
 REQUEST_TIMEOUT = 30
 MANUAL_DOC_SEND_GROUP = "Send WhatsApp"
 CHATWOOT_SIGNATURE_HEADER = "X-Chatwoot-Signature"
+CHATWOOT_TIMESTAMP_HEADER = "X-Chatwoot-Timestamp"
 CONFIRMATION_SOURCE_WHATSAPP = "WhatsApp"
 CONFIRMATION_SOURCE_MANUAL = "Manual"
 CONFIRMATION_PENDING = "Pending"
@@ -24,6 +26,7 @@ CONFIRMATION_EVENT_MARKER = "SNRG WhatsApp customer confirmation processed"
 CONFIRMATION_MANUAL_MARKER = "SNRG WhatsApp customer confirmation set manually"
 CONFIRMATION_UNMATCHED_TITLE = "SNRG WhatsApp customer confirmation unmatched"
 CONFIRMATION_AMBIGUOUS_TITLE = "SNRG WhatsApp customer confirmation ambiguous"
+CHATWOOT_MAX_SIGNATURE_AGE_SECONDS = 300
 CONFIRMATION_STATUS_VALUES = {
     "confirm": CONFIRMATION_CONFIRMED,
     "confirmed": CONFIRMATION_CONFIRMED,
@@ -444,7 +447,6 @@ def _get_common_config():
         "chatwoot_account_id": frappe.conf.get("chatwoot_account_id"),
         "chatwoot_api_access_token": frappe.conf.get("chatwoot_api_access_token"),
         "chatwoot_inbox_id": frappe.conf.get("chatwoot_inbox_id"),
-        "chatwoot_webhook_secret": frappe.conf.get("chatwoot_webhook_secret"),
     }
 
     missing = [
@@ -1127,20 +1129,34 @@ def _webhook_response(status_code, payload):
 
 
 def _is_valid_chatwoot_signature(raw_payload):
-    secret = frappe.conf.get("chatwoot_webhook_secret")
+    secret = _get_whatsapp_setting("chatwoot_webhook_secret")
     if not secret:
-        frappe.throw("Missing WhatsApp config in site_config.json: chatwoot_webhook_secret")
+        frappe.throw("Missing Chatwoot webhook secret in SNRG WhatsApp Settings or site config.")
 
     provided = (frappe.get_request_header(CHATWOOT_SIGNATURE_HEADER) or "").strip()
-    if not provided:
+    timestamp = (frappe.get_request_header(CHATWOOT_TIMESTAMP_HEADER) or "").strip()
+    if not provided or not timestamp:
         return False
 
-    expected = hmac.new(
+    if not _is_recent_chatwoot_timestamp(timestamp):
+        return False
+
+    message = f"{timestamp}.".encode("utf-8") + (raw_payload or b"")
+    expected = "sha256=" + hmac.new(
         secret.encode("utf-8"),
-        raw_payload or b"",
+        message,
         hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(provided, expected)
+
+
+def _is_recent_chatwoot_timestamp(timestamp):
+    try:
+        signed_at = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+
+    return abs(int(time.time()) - signed_at) <= CHATWOOT_MAX_SIGNATURE_AGE_SECONDS
 
 
 def _is_confirmation_event(payload):
