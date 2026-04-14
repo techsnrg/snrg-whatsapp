@@ -6,6 +6,7 @@
   "enable_quotation_whatsapp_on_submit": 1,
   "enable_sales_invoice_whatsapp_on_submit": 1,
   "enable_payment_entry_whatsapp_on_submit": 1,
+  "chatwoot_webhook_secret": "replace-with-chatwoot-webhook-secret",
   "whatsapp_quotation_template_name": "sales_quotation_confirmation",
   "whatsapp_quotation_template_language": "en_US",
   "whatsapp_quotation_print_format": "Quotation",

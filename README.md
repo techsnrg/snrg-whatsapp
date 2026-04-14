@@ -17,6 +17,7 @@ Add these keys to `site_config.json` for the ERPNext site:
   "chatwoot_account_id": 1,
   "chatwoot_api_access_token": "YOUR_CHATWOOT_USER_API_TOKEN",
   "chatwoot_inbox_id": 12,
+  "chatwoot_webhook_secret": "YOUR_CHATWOOT_WEBHOOK_SECRET",
   "enable_quotation_whatsapp_on_submit": 1,
   "enable_sales_invoice_whatsapp_on_submit": 1,
   "enable_payment_entry_whatsapp_on_submit": 1,
@@ -45,9 +46,13 @@ bench restart
 ## Notes
 
 - The approved WhatsApp template must include a `document` header.
+- Configure a Chatwoot webhook to `POST` inbound message events to `/api/method/snrg_whatsapp.api.handle_chatwoot_confirmation_webhook`.
+- Add `chatwoot_webhook_secret` from Chatwoot to `site_config.json`; the webhook is rejected when the signature is missing or invalid.
 - The Quotation, Sales Invoice, and Payment Entry submit hooks queue WhatsApp sends in the background.
 - ERPNext sends through Chatwoot, so outgoing messages appear in the Chatwoot conversation thread.
 - Mobile lookup prefers document-level contact mobile, then customer mobile, then contact mobile. Payment Entry can also fall back to linked Sales Invoice contact details.
+- Quotation sends now persist outbound Chatwoot message and conversation ids so inbound customer confirmations can be matched back safely.
+- The Quotation form includes a manual customer-confirmation override action for privileged users and stores an audit comment.
 - This app is intentionally backend-only and does not add a Desk module or frontend UI.
 - Successful sends are marked on the document timeline to prevent duplicate sends on repeat execution.
 - Customer Payment Entry sends only run for `party_type = Customer`; supplier payments are skipped.

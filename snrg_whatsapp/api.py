@@ -1,16 +1,37 @@
+from datetime import datetime
+import hashlib
+import hmac
 import io
 import json
 import re
 
 import frappe
 import requests
-from frappe.utils import formatdate
+from frappe.utils import formatdate, now_datetime
 from frappe.utils.pdf import get_pdf
 
 
 DEFAULT_TEMPLATE_LANGUAGE = "en_US"
 REQUEST_TIMEOUT = 30
 MANUAL_DOC_SEND_GROUP = "Send WhatsApp"
+CHATWOOT_SIGNATURE_HEADER = "X-Chatwoot-Signature"
+CONFIRMATION_SOURCE_WHATSAPP = "WhatsApp"
+CONFIRMATION_SOURCE_MANUAL = "Manual"
+CONFIRMATION_PENDING = "Pending"
+CONFIRMATION_CONFIRMED = "Confirmed"
+CONFIRMATION_CHANGES_REQUESTED = "Changes Requested"
+CONFIRMATION_EVENT_MARKER = "SNRG WhatsApp customer confirmation processed"
+CONFIRMATION_MANUAL_MARKER = "SNRG WhatsApp customer confirmation set manually"
+CONFIRMATION_UNMATCHED_TITLE = "SNRG WhatsApp customer confirmation unmatched"
+CONFIRMATION_AMBIGUOUS_TITLE = "SNRG WhatsApp customer confirmation ambiguous"
+CONFIRMATION_STATUS_VALUES = {
+    "confirm": CONFIRMATION_CONFIRMED,
+    "confirmed": CONFIRMATION_CONFIRMED,
+    "request_changes": CONFIRMATION_CHANGES_REQUESTED,
+    "changes_requested": CONFIRMATION_CHANGES_REQUESTED,
+    "changes requested": CONFIRMATION_CHANGES_REQUESTED,
+    "pending": CONFIRMATION_PENDING,
+}
 SUPPORTED_REPORTS = {
     "Customer Ledger Report": {
         "label": "Customer Ledger",
@@ -143,6 +164,56 @@ def send_payment_entry_whatsapp(payment_entry_name, raise_on_error=False, force=
     )
 
 
+@frappe.whitelist(allow_guest=True)
+def handle_chatwoot_confirmation_webhook():
+    raw_payload = frappe.request.get_data(cache=False) or b""
+    parsed_payload = _parse_json_payload(raw_payload)
+    if parsed_payload is None:
+        return _webhook_response(400, {"status": "error", "message": "Malformed JSON payload."})
+
+    if not _is_valid_chatwoot_signature(raw_payload):
+        return _webhook_response(401, {"status": "error", "message": "Invalid Chatwoot signature."})
+
+    if not _is_confirmation_event(parsed_payload):
+        return _webhook_response(200, {"status": "ignored", "message": "Event is not a customer confirmation."})
+
+    intent = _extract_confirmation_intent(parsed_payload)
+    if not intent:
+        return _webhook_response(200, {"status": "ignored", "message": "Inbound message is not a confirmation action."})
+
+    try:
+        quotation = _resolve_quotation_for_confirmation(parsed_payload)
+    except AmbiguousConfirmationError as exc:
+        _log_confirmation_issue(CONFIRMATION_AMBIGUOUS_TITLE, parsed_payload, str(exc))
+        return _webhook_response(409, {"status": "error", "message": str(exc)})
+
+    if not quotation:
+        _log_confirmation_issue(CONFIRMATION_UNMATCHED_TITLE, parsed_payload, "No matching quotation found.")
+        return _webhook_response(404, {"status": "error", "message": "No matching quotation found."})
+
+    event_id = _extract_event_id(parsed_payload)
+    if _confirmation_event_already_processed(quotation, event_id):
+        return _webhook_response(
+            200,
+            {
+                "status": "duplicate",
+                "message": "Webhook event already processed.",
+                "quotation": quotation.name,
+            },
+        )
+
+    _apply_confirmation_update(quotation, parsed_payload, intent, event_id)
+    frappe.db.commit()
+    return _webhook_response(
+        200,
+        {
+            "status": "processed",
+            "quotation": quotation.name,
+            "customer_confirmation_status": _intent_to_status(intent),
+        },
+    )
+
+
 @frappe.whitelist()
 def get_manual_whatsapp_recipients(doctype=None, docname=None, customer=None):
     customer_name = _resolve_customer_for_manual_send(doctype=doctype, docname=docname, customer=customer)
@@ -174,6 +245,33 @@ def send_document_whatsapp_manual(doctype, docname, recipient_mobile, recipient_
         "message": f"{doctype} sent on WhatsApp to {recipient_label or recipient_mobile}",
         "response": response,
     }
+
+
+@frappe.whitelist()
+def set_customer_confirmation_status(quotation_name, status, notes):
+    normalized_status = _normalize_manual_confirmation_status(status)
+    notes = (notes or "").strip()
+    if not notes:
+        frappe.throw("Notes are required when setting customer confirmation manually.")
+
+    quotation = frappe.get_doc("Quotation", quotation_name)
+    if not quotation.has_permission("write"):
+        frappe.throw("You do not have permission to update this quotation.")
+
+    fields = {
+        "customer_confirmation_status": normalized_status,
+        "customer_confirmation_datetime": now_datetime(),
+        "customer_confirmation_source": CONFIRMATION_SOURCE_MANUAL,
+        "customer_confirmation_notes": notes,
+    }
+    _set_quotation_confirmation_fields(quotation, fields)
+    _add_timeline_note(
+        quotation,
+        CONFIRMATION_MANUAL_MARKER,
+        f"Status: {normalized_status}. Notes: {notes}",
+    )
+    frappe.db.commit()
+    return {"message": f"Customer confirmation updated to {normalized_status}."}
 
 
 @frappe.whitelist()
@@ -297,6 +395,9 @@ def _deliver_document_whatsapp(
         _add_timeline_note(doc, automation["failure_marker"], "No mobile number found.")
         return None
 
+    if doctype == "Quotation":
+        doc.customer_confirmation_token = _get_or_create_confirmation_token(doc)
+
     filename = f"{doc.name}.pdf"
     response = _send_template_message(
         config=config,
@@ -308,11 +409,20 @@ def _deliver_document_whatsapp(
     )
 
     message_id = response.get("source_id") if isinstance(response, dict) else None
+    conversation_id = _extract_chatwoot_conversation_id(response)
+    if doctype == "Quotation":
+        _record_quotation_outbound_confirmation_context(
+            doc,
+            recipient=recipient,
+            message_id=message_id,
+            conversation_id=conversation_id,
+        )
+
     suffix = f" | Target: {note_context}" if note_context else ""
     _add_timeline_note(
         doc,
         automation["send_marker"],
-        f"Recipient: {recipient} | Message ID: {message_id or 'n/a'}{suffix}",
+        f"Recipient: {recipient} | Message ID: {message_id or 'n/a'} | Conversation ID: {conversation_id or 'n/a'}{suffix}",
     )
 
     frappe.logger().info(
@@ -334,6 +444,7 @@ def _get_common_config():
         "chatwoot_account_id": frappe.conf.get("chatwoot_account_id"),
         "chatwoot_api_access_token": frappe.conf.get("chatwoot_api_access_token"),
         "chatwoot_inbox_id": frappe.conf.get("chatwoot_inbox_id"),
+        "chatwoot_webhook_secret": frappe.conf.get("chatwoot_webhook_secret"),
     }
 
     missing = [
@@ -942,11 +1053,13 @@ def _build_preview(doc, automation):
 
 
 def _render_quotation_preview(doc):
+    token = doc.get("customer_confirmation_token") or _get_or_create_confirmation_token(doc)
     return (
         f"Dear {_safe_name(doc.customer_name or doc.party_name)},\n\n"
         f"Your quotation {doc.name} dated {formatdate(doc.transaction_date)} is generated.\n\n"
         "Please acknowledge receipt of this quotation. In case of any clarification or "
         "modification required, you may respond to this message.\n\n"
+        f"Reference: {doc.name} | Token: {token}\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
 
@@ -995,6 +1108,450 @@ def _render_payment_entry_preview(doc):
 
 def _safe_name(value):
     return value or "Customer"
+
+
+class AmbiguousConfirmationError(Exception):
+    pass
+
+
+def _parse_json_payload(raw_payload):
+    try:
+        return json.loads((raw_payload or b"{}").decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _webhook_response(status_code, payload):
+    frappe.local.response["http_status_code"] = status_code
+    return payload
+
+
+def _is_valid_chatwoot_signature(raw_payload):
+    secret = frappe.conf.get("chatwoot_webhook_secret")
+    if not secret:
+        frappe.throw("Missing WhatsApp config in site_config.json: chatwoot_webhook_secret")
+
+    provided = (frappe.get_request_header(CHATWOOT_SIGNATURE_HEADER) or "").strip()
+    if not provided:
+        return False
+
+    expected = hmac.new(
+        secret.encode("utf-8"),
+        raw_payload or b"",
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(provided, expected)
+
+
+def _is_confirmation_event(payload):
+    event_name = (payload.get("event") or "").strip().lower()
+    if event_name and event_name not in {"message_created", "message_updated"}:
+        return False
+
+    message = _get_message_payload(payload)
+    if not message:
+        return False
+
+    if cint_or_none(message.get("private"), default=0):
+        return False
+
+    message_type = str(message.get("message_type") or "").strip().lower()
+    if message_type in {"outgoing", "template", "activity"}:
+        return False
+    if str(message.get("message_type")) == "1":
+        return False
+
+    sender = _get_sender_payload(payload)
+    sender_type = str(sender.get("type") or sender.get("sender_type") or "").strip().lower()
+    if sender_type in {"agent", "user"}:
+        return False
+
+    return True
+
+
+def _get_message_payload(payload):
+    return payload.get("message") or payload
+
+
+def _get_sender_payload(payload):
+    message = _get_message_payload(payload)
+    sender = message.get("sender") or payload.get("sender")
+    if isinstance(sender, dict):
+        return sender
+
+    meta_sender = (((payload.get("conversation") or {}).get("meta") or {}).get("sender")) or {}
+    return meta_sender if isinstance(meta_sender, dict) else {}
+
+
+def _extract_confirmation_intent(payload):
+    candidate_texts = _collect_confirmation_texts(payload)
+    for candidate in candidate_texts:
+        normalized = _normalize_confirmation_text(candidate)
+        if normalized in {"confirm", "confirmed"}:
+            return "confirm"
+        if normalized in {"request changes", "changes requested", "request_changes", "changes_requested"}:
+            return "request_changes"
+    return None
+
+
+def _collect_confirmation_texts(payload):
+    message = _get_message_payload(payload)
+    content_attributes = message.get("content_attributes") or {}
+    values = [
+        message.get("content"),
+        message.get("content_type"),
+        payload.get("content"),
+        content_attributes.get("submitted_values"),
+        content_attributes.get("selected_option"),
+        content_attributes.get("title"),
+        content_attributes.get("value"),
+        content_attributes.get("button_text"),
+        content_attributes.get("text"),
+        content_attributes.get("display_text"),
+        content_attributes.get("payload"),
+    ]
+    values.extend(_flatten_strings(content_attributes))
+    return [value for value in values if isinstance(value, str) and value.strip()]
+
+
+def _flatten_strings(value):
+    items = []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        for nested in value.values():
+            items.extend(_flatten_strings(nested))
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            items.extend(_flatten_strings(nested))
+    return items
+
+
+def _normalize_confirmation_text(value):
+    text = re.sub(r"\s+", " ", (value or "").strip().lower())
+    text = re.sub(r"[^a-z ]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _resolve_quotation_for_confirmation(payload):
+    matchers = [
+        _find_quotation_by_referenced_message,
+        _find_quotation_by_conversation,
+        _find_quotation_by_explicit_reference,
+        _find_quotation_by_contact,
+    ]
+    for matcher in matchers:
+        quotation = matcher(payload)
+        if quotation:
+            return quotation
+    return None
+
+
+def _find_quotation_by_referenced_message(payload):
+    referenced_message_id = _extract_referenced_message_id(payload)
+    if not referenced_message_id:
+        return None
+
+    matches = _find_quotations_by_field("customer_confirmation_outbound_message_id", referenced_message_id)
+    return _resolve_unique_quotation_match(matches, "Quoted message matches multiple quotations.")
+
+
+def _find_quotation_by_conversation(payload):
+    conversation_id = _extract_conversation_id(payload)
+    if not conversation_id:
+        return None
+
+    matches = _find_quotations_by_field("customer_confirmation_outbound_conversation_id", str(conversation_id))
+    if len(matches) == 1:
+        return matches[0]
+
+    pending_matches = [doc for doc in matches if doc.get("customer_confirmation_status") == CONFIRMATION_PENDING]
+    if len(pending_matches) == 1:
+        return pending_matches[0]
+    if len(matches) > 1:
+        raise AmbiguousConfirmationError("Conversation matches multiple quotations.")
+    return None
+
+
+def _find_quotation_by_explicit_reference(payload):
+    candidates = _extract_reference_candidates(payload)
+    if not candidates:
+        return None
+
+    for candidate in candidates:
+        if frappe.db.exists("Quotation", candidate):
+            return frappe.get_doc("Quotation", candidate)
+
+    token_matches = []
+    if frappe.db.has_column("Quotation", "customer_confirmation_token"):
+        for token in candidates:
+            token_matches.extend(_find_quotations_by_field("customer_confirmation_token", token))
+    return _resolve_unique_quotation_match(token_matches, "Reference token matches multiple quotations.")
+
+
+def _find_quotation_by_contact(payload):
+    contact = _extract_contact_number(payload)
+    if not contact:
+        return None
+
+    matches = _find_quotations_by_field("customer_confirmation_outbound_contact", contact)
+    if len(matches) == 1:
+        return matches[0]
+
+    pending_matches = [doc for doc in matches if doc.get("customer_confirmation_status") == CONFIRMATION_PENDING]
+    if len(pending_matches) == 1:
+        return pending_matches[0]
+    if len(pending_matches) > 1:
+        raise AmbiguousConfirmationError("Contact matches multiple pending quotations.")
+    return None
+
+
+def _resolve_unique_quotation_match(matches, error_message):
+    unique_names = []
+    seen = set()
+    for match in matches or []:
+        if match.name in seen:
+            continue
+        seen.add(match.name)
+        unique_names.append(match)
+
+    if len(unique_names) > 1:
+        raise AmbiguousConfirmationError(error_message)
+    return unique_names[0] if unique_names else None
+
+
+def _find_quotations_by_field(fieldname, value):
+    if not value or not frappe.db.has_column("Quotation", fieldname):
+        return []
+
+    names = frappe.get_all(
+        "Quotation",
+        filters={fieldname: str(value), "docstatus": 1},
+        fields=["name"],
+        order_by="modified desc",
+        limit=5,
+    )
+    return [frappe.get_doc("Quotation", row.name) for row in names]
+
+
+def _extract_reference_candidates(payload):
+    candidates = set()
+    for value in _collect_confirmation_texts(payload):
+        for pattern in (
+            r"quotation\s+([A-Za-z0-9./_-]+)",
+            r"reference\s*[:#-]?\s*([A-Za-z0-9./_-]+)",
+            r"token\s*[:#-]?\s*([A-Za-z0-9_-]+)",
+        ):
+            for match in re.findall(pattern, value, flags=re.IGNORECASE):
+                if match:
+                    candidates.add(match.strip())
+    return list(candidates)
+
+
+def _extract_referenced_message_id(payload):
+    message = _get_message_payload(payload)
+    content_attributes = message.get("content_attributes") or {}
+    candidates = [
+        content_attributes.get("in_reply_to"),
+        content_attributes.get("in_reply_to_message_id"),
+        content_attributes.get("in_reply_to_external_id"),
+        content_attributes.get("quoted_message_id"),
+        content_attributes.get("context_message_id"),
+        payload.get("in_reply_to"),
+    ]
+    for candidate in candidates:
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None
+
+
+def _extract_event_id(payload):
+    message = _get_message_payload(payload)
+    for candidate in (
+        message.get("source_id"),
+        message.get("id"),
+        payload.get("id"),
+        payload.get("source_id"),
+    ):
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None
+
+
+def _extract_conversation_id(payload):
+    message = _get_message_payload(payload)
+    conversation = payload.get("conversation") or {}
+    for candidate in (
+        message.get("conversation_id"),
+        conversation.get("id"),
+        conversation.get("display_id"),
+        payload.get("conversation_id"),
+    ):
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None
+
+
+def _extract_chatwoot_conversation_id(response):
+    if not isinstance(response, dict):
+        return None
+
+    conversation = response.get("conversation") or {}
+    for candidate in (
+        response.get("conversation_id"),
+        conversation.get("id"),
+        conversation.get("display_id"),
+    ):
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None
+
+
+def _extract_contact_number(payload):
+    sender = _get_sender_payload(payload)
+    conversation = payload.get("conversation") or {}
+    meta_sender = (conversation.get("meta") or {}).get("sender") or {}
+    for candidate in (
+        sender.get("phone_number"),
+        meta_sender.get("phone_number"),
+        payload.get("phone_number"),
+    ):
+        normalized = _normalize_phone(candidate)
+        if normalized:
+            return normalized
+    return None
+
+
+def _apply_confirmation_update(quotation, payload, intent, event_id):
+    fields = {
+        "customer_confirmation_status": _intent_to_status(intent),
+        "customer_confirmation_datetime": _extract_event_datetime(payload) or now_datetime(),
+        "customer_confirmation_source": CONFIRMATION_SOURCE_WHATSAPP,
+        "customer_confirmation_message_id": event_id,
+        "customer_confirmation_conversation_id": _extract_conversation_id(payload),
+        "customer_confirmation_contact": _extract_contact_number(payload),
+        "customer_confirmation_payload": _compact_json(payload),
+    }
+    _set_quotation_confirmation_fields(quotation, fields)
+
+    if intent == "confirm":
+        detail = f"Customer confirmed via WhatsApp. Event ID: {event_id or 'n/a'}"
+    else:
+        detail = f"Customer requested changes via WhatsApp. Event ID: {event_id or 'n/a'}"
+    _add_timeline_note(quotation, CONFIRMATION_EVENT_MARKER, detail)
+
+
+def _intent_to_status(intent):
+    return CONFIRMATION_STATUS_VALUES[intent]
+
+
+def _extract_event_datetime(payload):
+    message = _get_message_payload(payload)
+    for candidate in (
+        message.get("created_at"),
+        message.get("updated_at"),
+        payload.get("created_at"),
+        payload.get("timestamp"),
+    ):
+        parsed = _parse_datetime_value(candidate)
+        if parsed:
+            return parsed
+    return None
+
+
+def _parse_datetime_value(value):
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value))
+        except Exception:
+            return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return frappe.utils.get_datetime(text)
+    except Exception:
+        return None
+
+
+def _set_quotation_confirmation_fields(doc, fields):
+    if not fields:
+        return
+
+    for fieldname, value in fields.items():
+        if not frappe.db.has_column("Quotation", fieldname):
+            continue
+        doc.db_set(fieldname, value, update_modified=False)
+        doc.set(fieldname, value)
+
+
+def _record_quotation_outbound_confirmation_context(doc, recipient, message_id, conversation_id):
+    fields = {
+        "customer_confirmation_status": CONFIRMATION_PENDING,
+        "customer_confirmation_source": CONFIRMATION_SOURCE_WHATSAPP,
+        "customer_confirmation_datetime": None,
+        "customer_confirmation_message_id": None,
+        "customer_confirmation_conversation_id": None,
+        "customer_confirmation_contact": None,
+        "customer_confirmation_payload": None,
+        "customer_confirmation_outbound_message_id": message_id,
+        "customer_confirmation_outbound_conversation_id": conversation_id,
+        "customer_confirmation_outbound_contact": recipient,
+        "customer_confirmation_token": doc.get("customer_confirmation_token") or _get_or_create_confirmation_token(doc),
+    }
+    _set_quotation_confirmation_fields(doc, fields)
+
+
+def _get_or_create_confirmation_token(doc):
+    token = (doc.get("customer_confirmation_token") or "").strip()
+    if token:
+        return token
+    return hashlib.sha1(doc.name.encode("utf-8")).hexdigest()[:10].upper()
+
+
+def _confirmation_event_already_processed(doc, event_id):
+    if not event_id:
+        return False
+
+    if str(doc.get("customer_confirmation_message_id") or "") == str(event_id):
+        return True
+
+    return bool(
+        frappe.db.exists(
+            "Comment",
+            {
+                "reference_doctype": doc.doctype,
+                "reference_name": doc.name,
+                "comment_type": "Comment",
+                "content": ["like", f"%Event ID: {event_id}%"],
+            },
+        )
+    )
+
+
+def _normalize_manual_confirmation_status(status):
+    normalized = CONFIRMATION_STATUS_VALUES.get((status or "").strip().lower())
+    if not normalized:
+        frappe.throw("Status must be Pending, Confirmed, or Changes Requested.")
+    return normalized
+
+
+def _compact_json(payload):
+    try:
+        return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    except Exception:
+        return json.dumps({"raw": str(payload)})
+
+
+def _log_confirmation_issue(title, payload, detail):
+    frappe.log_error(
+        title=title,
+        message=_compact_json({"detail": detail, "payload": payload}),
+    )
 
 
 def _get_payment_entry_amount(doc):

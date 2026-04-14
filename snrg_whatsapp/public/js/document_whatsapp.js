@@ -1,4 +1,5 @@
 const GROUP_LABEL = __("Send WhatsApp");
+const CONFIRMATION_GROUP_LABEL = __("Customer Confirmation");
 
 function getWhatsAppMessage(response, fallback) {
 	return (response && response.message && response.message.message) || fallback;
@@ -77,21 +78,92 @@ async function setupDocumentWhatsAppButtons(frm, doctype) {
 	}
 }
 
+function setupConfirmationButton(frm, doctype) {
+	if (doctype !== "Quotation" || frm.is_new() || frm.doc.docstatus !== 1) return;
+
+	const existingLabels = frm.__snrg_confirmation_labels || [];
+	existingLabels.forEach((label) => frm.remove_custom_button(label, CONFIRMATION_GROUP_LABEL));
+	frm.__snrg_confirmation_labels = [];
+
+	const label = __("Set Status");
+	frm.add_custom_button(
+		label,
+		() => {
+			frappe.prompt(
+				[
+					{
+						fieldname: "status",
+						fieldtype: "Select",
+						label: __("Status"),
+						options: ["Pending", "Confirmed", "Changes Requested"].join("\n"),
+						reqd: 1,
+						default: frm.doc.customer_confirmation_status || "Pending",
+					},
+					{
+						fieldname: "notes",
+						fieldtype: "Small Text",
+						label: __("Notes"),
+						reqd: 1,
+					},
+				],
+				async (values) => {
+					try {
+						const response = await frappe.call({
+							method: "snrg_whatsapp.api.set_customer_confirmation_status",
+							args: {
+								quotation_name: frm.doc.name,
+								status: values.status,
+								notes: values.notes,
+							},
+							freeze: true,
+							freeze_message: __("Updating confirmation..."),
+						});
+						frappe.show_alert({
+							message: getWhatsAppMessage(response, __("Customer confirmation updated.")),
+							indicator: "green",
+						});
+						await frm.reload_doc();
+					} catch (error) {
+						console.error("Failed to update confirmation", error);
+						frappe.show_alert({
+							message: __("Could not update customer confirmation."),
+							indicator: "red",
+						});
+					}
+				},
+				__("Set Customer Confirmation"),
+				__("Update")
+			);
+		},
+		CONFIRMATION_GROUP_LABEL
+	);
+	frm.__snrg_confirmation_labels.push(label);
+}
+
 function bindDocumentWhatsApp(doctype) {
 	frappe.ui.form.on(doctype, {
 		refresh(frm) {
 			frappe.after_ajax(() => {
-				setTimeout(() => setupDocumentWhatsAppButtons(frm, doctype), 300);
+				setTimeout(() => {
+					setupDocumentWhatsAppButtons(frm, doctype);
+					setupConfirmationButton(frm, doctype);
+				}, 300);
 			});
 		},
 		after_save(frm) {
 			frappe.after_ajax(() => {
-				setTimeout(() => setupDocumentWhatsAppButtons(frm, doctype), 300);
+				setTimeout(() => {
+					setupDocumentWhatsAppButtons(frm, doctype);
+					setupConfirmationButton(frm, doctype);
+				}, 300);
 			});
 		},
 		on_submit(frm) {
 			frappe.after_ajax(() => {
-				setTimeout(() => setupDocumentWhatsAppButtons(frm, doctype), 300);
+				setTimeout(() => {
+					setupDocumentWhatsAppButtons(frm, doctype);
+					setupConfirmationButton(frm, doctype);
+				}, 300);
 			});
 		},
 	});
