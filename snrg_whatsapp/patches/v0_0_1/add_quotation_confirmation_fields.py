@@ -8,7 +8,7 @@ CUSTOM_FIELDS = {
             "fieldname": "snrg_customer_confirmation_section",
             "fieldtype": "Section Break",
             "label": "Customer Confirmation",
-            "insert_after": "contact_mobile",
+            "insert_after": "more_info_tab",
         },
         {
             "fieldname": "customer_confirmation_status",
