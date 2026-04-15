@@ -2,7 +2,8 @@ import frappe
 
 
 FIELD_SEQUENCE = [
-    ("snrg_customer_confirmation_section", "more_info_tab"),
+    ("customer_confirmation_tab", "more_info_tab"),
+    ("snrg_customer_confirmation_section", "customer_confirmation_tab"),
     ("customer_confirmation_status", "snrg_customer_confirmation_section"),
     ("customer_confirmation_datetime", "customer_confirmation_status"),
     ("customer_confirmation_source", "customer_confirmation_datetime"),
@@ -35,6 +36,7 @@ def execute():
             "customer_confirmation_outbound_conversation_id",
             "customer_confirmation_outbound_contact",
         } else 0
+        custom_field.allow_on_submit = 1
         custom_field.save(ignore_permissions=True)
 
     frappe.clear_cache(doctype="Quotation")

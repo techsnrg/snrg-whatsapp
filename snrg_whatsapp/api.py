@@ -169,6 +169,7 @@ def send_payment_entry_whatsapp(payment_entry_name, raise_on_error=False, force=
 
 @frappe.whitelist(allow_guest=True)
 def handle_chatwoot_confirmation_webhook():
+    _ensure_quotation_confirmation_setup()
     raw_payload = frappe.request.get_data(cache=False) or b""
     parsed_payload = _parse_json_payload(raw_payload)
     if parsed_payload is None:
@@ -252,6 +253,7 @@ def send_document_whatsapp_manual(doctype, docname, recipient_mobile, recipient_
 
 @frappe.whitelist()
 def set_customer_confirmation_status(quotation_name, status, notes):
+    _ensure_quotation_confirmation_setup()
     normalized_status = _normalize_manual_confirmation_status(status)
     notes = (notes or "").strip()
     if not notes:
@@ -275,6 +277,18 @@ def set_customer_confirmation_status(quotation_name, status, notes):
     )
     frappe.db.commit()
     return {"message": f"Customer confirmation updated to {normalized_status}."}
+
+
+@frappe.whitelist()
+def ensure_customer_confirmation_setup():
+    if "System Manager" not in frappe.get_roles():
+        frappe.throw("Only a System Manager can initialize customer confirmation fields.")
+
+    created = _ensure_quotation_confirmation_setup()
+    return {
+        "message": "Customer confirmation fields are ready.",
+        "created": created,
+    }
 
 
 @frappe.whitelist()
@@ -1494,9 +1508,42 @@ def _parse_datetime_value(value):
         return None
 
 
+def _ensure_quotation_confirmation_setup():
+    required_columns = (
+        "customer_confirmation_status",
+        "customer_confirmation_datetime",
+        "customer_confirmation_source",
+        "customer_confirmation_notes",
+    )
+    required_custom_fields = (
+        "customer_confirmation_tab",
+        "snrg_customer_confirmation_section",
+        "customer_confirmation_status",
+        "customer_confirmation_datetime",
+        "customer_confirmation_source",
+        "customer_confirmation_notes",
+    )
+    if all(frappe.db.has_column("Quotation", fieldname) for fieldname in required_columns) and all(
+        frappe.db.exists("Custom Field", f"Quotation-{fieldname}") for fieldname in required_custom_fields
+    ):
+        return False
+
+    from snrg_whatsapp.patches.v0_0_1.add_quotation_confirmation_fields import execute as add_confirmation_fields
+    from snrg_whatsapp.patches.v0_0_1.reposition_quotation_confirmation_fields import (
+        execute as reposition_confirmation_fields,
+    )
+
+    add_confirmation_fields()
+    reposition_confirmation_fields()
+    frappe.clear_cache(doctype="Quotation")
+    return True
+
+
 def _set_quotation_confirmation_fields(doc, fields):
     if not fields:
         return
+
+    _ensure_quotation_confirmation_setup()
 
     for fieldname, value in fields.items():
         if not frappe.db.has_column("Quotation", fieldname):

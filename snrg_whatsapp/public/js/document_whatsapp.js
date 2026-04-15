@@ -44,6 +44,33 @@ async function sendDocumentWhatsApp(doctype, docname, recipient) {
 	}
 }
 
+async function ensureCustomerConfirmationSetup(frm, doctype) {
+	if (doctype !== "Quotation" || frm.is_new() || frm.doc.docstatus !== 1) return false;
+	if (frm.fields_dict.customer_confirmation_status) return false;
+	if (frm.__snrg_confirmation_setup_checked) return false;
+
+	frm.__snrg_confirmation_setup_checked = true;
+
+	try {
+		const response = await frappe.call({
+			method: "snrg_whatsapp.api.ensure_customer_confirmation_setup",
+		});
+		const created = !!(response && response.message && response.message.created);
+		if (created || frm.fields_dict.customer_confirmation_status) {
+			frappe.show_alert({
+				message: __("Customer confirmation fields were initialized. Reloading the form..."),
+				indicator: "green",
+			});
+			setTimeout(() => window.location.reload(), 500);
+			return true;
+		}
+	} catch (error) {
+		console.error("Failed to initialize customer confirmation fields", error);
+	}
+
+	return false;
+}
+
 async function setupDocumentWhatsAppButtons(frm, doctype) {
 	if (frm.is_new() || frm.doc.docstatus !== 1) return;
 
@@ -144,7 +171,9 @@ function bindDocumentWhatsApp(doctype) {
 	frappe.ui.form.on(doctype, {
 		refresh(frm) {
 			frappe.after_ajax(() => {
-				setTimeout(() => {
+				setTimeout(async () => {
+					const reloading = await ensureCustomerConfirmationSetup(frm, doctype);
+					if (reloading) return;
 					setupDocumentWhatsAppButtons(frm, doctype);
 					setupConfirmationButton(frm, doctype);
 				}, 300);
