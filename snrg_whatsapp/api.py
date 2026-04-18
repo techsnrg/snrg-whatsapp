@@ -1167,13 +1167,11 @@ def _build_preview(doc, automation):
 
 
 def _render_quotation_preview(doc):
-    token = doc.get("customer_confirmation_token") or _get_or_create_confirmation_token(doc)
     return (
         f"Dear {_safe_name(doc.customer_name or doc.party_name)},\n\n"
         f"Your quotation {doc.name} dated {formatdate(doc.transaction_date)} is generated.\n\n"
         "Please acknowledge receipt of this quotation. In case of any clarification or "
         "modification required, you may respond to this message.\n\n"
-        f"Reference: {doc.name} | Token: {token}\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
 

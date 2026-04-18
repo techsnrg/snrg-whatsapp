@@ -32,6 +32,7 @@ def execute():
         custom_field = frappe.get_doc("Custom Field", custom_field_name)
         custom_field.insert_after = insert_after
         custom_field.hidden = 1 if fieldname in {
+            "customer_confirmation_payload",
             "customer_confirmation_token",
             "customer_confirmation_outbound_message_id",
             "customer_confirmation_outbound_external_id",

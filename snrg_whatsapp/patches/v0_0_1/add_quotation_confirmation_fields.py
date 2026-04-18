@@ -78,6 +78,7 @@ CUSTOM_FIELDS = {
             "fieldtype": "Long Text",
             "label": "Customer Confirmation Payload",
             "insert_after": "customer_confirmation_notes",
+            "hidden": 1,
             "read_only": 1,
             "allow_on_submit": 1,
         },
