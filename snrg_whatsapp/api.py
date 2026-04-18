@@ -542,7 +542,14 @@ def _is_send_enabled(automation):
 def _get_whatsapp_setting(key, default=None):
     settings = _get_whatsapp_settings()
     if settings:
-        value = settings.get(key)
+        value = None
+        if key == "chatwoot_webhook_secret":
+            try:
+                value = settings.get_password(key)
+            except Exception:
+                value = None
+        if value in (None, ""):
+            value = settings.get(key)
         if value not in (None, ""):
             return value
 
