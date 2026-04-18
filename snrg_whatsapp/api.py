@@ -862,7 +862,13 @@ def _send_template_message(config, document_config, doc, automation, recipient, 
         json=payload,
         timeout=REQUEST_TIMEOUT,
     )
-    return _parse_chatwoot_response(response, f"send {automation['template_action_label']} via Chatwoot")
+    parsed = _parse_chatwoot_response(response, f"send {automation['template_action_label']} via Chatwoot")
+    return _hydrate_chatwoot_message_reference(
+        config=config,
+        conversation_id=conversation_id,
+        response_payload=parsed,
+        content=payload["content"],
+    )
 
 
 def _upload_to_chatwoot(config, document_config, doc, filename):
@@ -1269,6 +1275,7 @@ def _resolve_quotation_for_confirmation(payload):
     matchers = [
         _find_quotation_by_referenced_message,
         _find_quotation_by_referenced_external_id,
+        _find_quotation_by_chatwoot_reply_context,
         _find_quotation_by_conversation,
         _find_quotation_by_explicit_reference,
         _find_quotation_by_contact,
@@ -1296,6 +1303,36 @@ def _find_quotation_by_referenced_external_id(payload):
 
     matches = _find_quotations_by_field("customer_confirmation_outbound_external_id", referenced_external_id)
     return _resolve_unique_quotation_match(matches, "Quoted external message matches multiple quotations.")
+
+
+def _find_quotation_by_chatwoot_reply_context(payload):
+    conversation_id = _extract_conversation_id(payload)
+    if not conversation_id:
+        return None
+
+    referenced_message_id = _extract_referenced_message_id(payload)
+    referenced_external_id = _extract_referenced_external_message_id(payload)
+    if not referenced_message_id and not referenced_external_id:
+        return None
+
+    config = _get_common_config()
+    message = _fetch_chatwoot_referenced_message(
+        config=config,
+        conversation_id=conversation_id,
+        message_id=referenced_message_id,
+        external_id=referenced_external_id,
+    )
+    if not message:
+        return None
+
+    reference_payload = {
+        "content": message.get("content"),
+        "message": {
+            "content": message.get("content"),
+            "content_attributes": message.get("content_attributes") or {},
+        },
+    }
+    return _find_quotation_by_explicit_reference(reference_payload)
 
 
 def _find_quotation_by_conversation(payload):
@@ -1485,6 +1522,61 @@ def _extract_chatwoot_external_message_id(response):
         if candidate not in (None, ""):
             return str(candidate)
     return None
+
+
+def _hydrate_chatwoot_message_reference(config, conversation_id, response_payload, content):
+    if not isinstance(response_payload, dict):
+        return response_payload
+
+    if _extract_chatwoot_message_id(response_payload) and _extract_chatwoot_external_message_id(response_payload):
+        return response_payload
+
+    message = _find_matching_chatwoot_message(
+        config=config,
+        conversation_id=conversation_id,
+        content=content,
+    )
+    if not message:
+        return response_payload
+
+    merged = dict(response_payload)
+    merged.setdefault("id", message.get("id"))
+    merged.setdefault("message_id", message.get("id"))
+    merged.setdefault("source_id", message.get("source_id"))
+    merged.setdefault("conversation_id", conversation_id)
+    return merged
+
+
+def _find_matching_chatwoot_message(config, conversation_id, content):
+    messages = _fetch_chatwoot_conversation_messages(config, conversation_id)
+    normalized_content = (content or "").strip()
+    for message in messages:
+        if str(message.get("message_type")) not in {"outgoing", "1"}:
+            continue
+        if (message.get("content") or "").strip() == normalized_content:
+            return message
+    return messages[0] if messages else None
+
+
+def _fetch_chatwoot_referenced_message(config, conversation_id, message_id=None, external_id=None):
+    messages = _fetch_chatwoot_conversation_messages(config, conversation_id)
+    for message in messages:
+        if message_id and str(message.get("id")) == str(message_id):
+            return message
+        if external_id and str(message.get("source_id")) == str(external_id):
+            return message
+    return None
+
+
+def _fetch_chatwoot_conversation_messages(config, conversation_id):
+    response = requests.get(
+        _chatwoot_url(config, f"conversations/{conversation_id}/messages"),
+        headers=_chatwoot_headers(config),
+        timeout=REQUEST_TIMEOUT,
+    )
+    payload = _parse_chatwoot_response(response, "fetch Chatwoot conversation messages")
+    messages = payload.get("payload") if isinstance(payload, dict) else None
+    return messages if isinstance(messages, list) else []
 
 
 def _extract_contact_number(payload):
