@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import io
 import json
 import re
 import time
+from zoneinfo import ZoneInfo
 
 import frappe
 import requests
@@ -1824,17 +1825,45 @@ def _parse_datetime_value(value):
 
     if isinstance(value, (int, float)):
         try:
-            return datetime.fromtimestamp(float(value))
+            return _normalize_datetime_to_site_timezone(
+                datetime.fromtimestamp(float(value), tz=timezone.utc)
+            )
         except Exception:
             return None
 
     text = str(value).strip()
     if not text:
         return None
+
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is not None:
+            return _normalize_datetime_to_site_timezone(parsed)
+    except Exception:
+        pass
+
     try:
         return frappe.utils.get_datetime(text)
     except Exception:
         return None
+
+
+def _normalize_datetime_to_site_timezone(value):
+    if not isinstance(value, datetime):
+        return value
+
+    if value.tzinfo is None:
+        return value
+
+    try:
+        site_timezone = frappe.utils.get_system_timezone() or "UTC"
+        localized = value.astimezone(ZoneInfo(site_timezone))
+        return localized.replace(tzinfo=None)
+    except Exception:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _ensure_quotation_confirmation_setup():
