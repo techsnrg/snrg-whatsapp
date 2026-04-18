@@ -280,6 +280,21 @@ def set_customer_confirmation_status(quotation_name, status, notes):
 
 
 @frappe.whitelist()
+def sync_customer_confirmation_from_chatwoot(quotation_name):
+    _ensure_quotation_confirmation_setup()
+
+    quotation = frappe.get_doc("Quotation", quotation_name)
+    if not quotation.has_permission("write"):
+        frappe.throw("You do not have permission to update this quotation.")
+
+    result = _sync_customer_confirmation_from_chatwoot(quotation)
+    if result["status"] == "processed":
+        frappe.db.commit()
+
+    return result
+
+
+@frappe.whitelist()
 def ensure_customer_confirmation_setup():
     if "System Manager" not in frappe.get_roles():
         frappe.throw("Only a System Manager can initialize customer confirmation fields.")
@@ -1278,6 +1293,50 @@ def _normalize_confirmation_text(value):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _sync_customer_confirmation_from_chatwoot(quotation):
+    conversation_id = str(quotation.get("customer_confirmation_outbound_conversation_id") or "").strip()
+    if not conversation_id:
+        return {
+            "status": "missing_context",
+            "message": "No Chatwoot conversation is stored for this quotation yet.",
+        }
+
+    config = _get_common_config()
+    messages = _fetch_chatwoot_conversation_messages(config, conversation_id)
+    message = _find_chatwoot_confirmation_message_for_quotation(quotation, conversation_id, messages)
+    if not message:
+        return {
+            "status": "not_found",
+            "message": "No customer confirmation reply was found in Chatwoot for this quotation yet.",
+        }
+
+    payload = _build_chatwoot_sync_payload(message, conversation_id)
+    intent = _extract_confirmation_intent(payload)
+    if not intent:
+        return {
+            "status": "ignored",
+            "message": "The latest linked Chatwoot reply is not a supported confirmation action.",
+        }
+
+    event_id = _extract_event_id(payload)
+    if _confirmation_event_already_processed(quotation, event_id):
+        return {
+            "status": "duplicate",
+            "message": "This customer confirmation was already processed.",
+            "quotation": quotation.name,
+            "event_id": event_id,
+        }
+
+    _apply_confirmation_update(quotation, payload, intent, event_id)
+    return {
+        "status": "processed",
+        "message": f"Customer confirmation updated to {_intent_to_status(intent)}.",
+        "quotation": quotation.name,
+        "event_id": event_id,
+        "customer_confirmation_status": _intent_to_status(intent),
+    }
+
+
 def _resolve_quotation_for_confirmation(payload):
     matchers = [
         _find_quotation_by_referenced_message,
@@ -1292,6 +1351,39 @@ def _resolve_quotation_for_confirmation(payload):
         if quotation:
             return quotation
     return None
+
+
+def _find_chatwoot_confirmation_message_for_quotation(quotation, conversation_id, messages):
+    ordered_messages = _sort_chatwoot_messages(messages)
+    outbound_message_id = str(quotation.get("customer_confirmation_outbound_message_id") or "").strip()
+    outbound_external_id = str(quotation.get("customer_confirmation_outbound_external_id") or "").strip()
+    outbound_contact = _normalize_phone(quotation.get("customer_confirmation_outbound_contact"))
+
+    exact_match = None
+    fallback_match = None
+    for message in ordered_messages:
+        payload = _build_chatwoot_sync_payload(message, conversation_id)
+        if not _is_confirmation_event(payload):
+            continue
+
+        intent = _extract_confirmation_intent(payload)
+        if not intent:
+            continue
+
+        referenced_message_id = _extract_referenced_message_id(payload)
+        referenced_external_id = _extract_referenced_external_message_id(payload)
+        if outbound_message_id and referenced_message_id == outbound_message_id:
+            return message
+        if outbound_external_id and referenced_external_id == outbound_external_id:
+            return message
+
+        if outbound_contact and _extract_contact_number(payload) == outbound_contact and not fallback_match:
+            fallback_match = message
+
+        if not exact_match:
+            exact_match = message
+
+    return fallback_match or exact_match
 
 
 def _find_quotation_by_referenced_message(payload):
@@ -1584,6 +1676,28 @@ def _fetch_chatwoot_conversation_messages(config, conversation_id):
     payload = _parse_chatwoot_response(response, "fetch Chatwoot conversation messages")
     messages = payload.get("payload") if isinstance(payload, dict) else None
     return messages if isinstance(messages, list) else []
+
+
+def _sort_chatwoot_messages(messages):
+    def sort_key(message):
+        created_at = _parse_datetime_value(message.get("created_at"))
+        if created_at:
+            return (created_at.timestamp(), cint_or_none(message.get("id"), default=0))
+        return (0, cint_or_none(message.get("id"), default=0))
+
+    return sorted(messages or [], key=sort_key, reverse=True)
+
+
+def _build_chatwoot_sync_payload(message, conversation_id):
+    payload = {
+        "event": "message_created",
+        "conversation": {"id": conversation_id},
+        "message": message,
+    }
+    for key in ("id", "source_id", "content", "message_type", "sender"):
+        if key in message:
+            payload[key] = message.get(key)
+    return payload
 
 
 def _extract_contact_number(payload):

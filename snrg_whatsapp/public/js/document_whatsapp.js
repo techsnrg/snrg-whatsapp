@@ -165,6 +165,37 @@ function setupConfirmationButton(frm, doctype) {
 		CONFIRMATION_GROUP_LABEL
 	);
 	frm.__snrg_confirmation_labels.push(label);
+
+	const syncLabel = __("Sync from Chatwoot");
+	frm.add_custom_button(
+		syncLabel,
+		async () => {
+			try {
+				const response = await frappe.call({
+					method: "snrg_whatsapp.api.sync_customer_confirmation_from_chatwoot",
+					args: {
+						quotation_name: frm.doc.name,
+					},
+					freeze: true,
+					freeze_message: __("Syncing confirmation from Chatwoot..."),
+				});
+				const result = response && response.message;
+				frappe.show_alert({
+					message: getWhatsAppMessage(response, (result && result.message) || __("Chatwoot sync completed.")),
+					indicator: result && result.status === "processed" ? "green" : "orange",
+				});
+				await frm.reload_doc();
+			} catch (error) {
+				console.error("Failed to sync confirmation from Chatwoot", error);
+				frappe.show_alert({
+					message: __("Could not sync customer confirmation from Chatwoot."),
+					indicator: "red",
+				});
+			}
+		},
+		CONFIRMATION_GROUP_LABEL
+	);
+	frm.__snrg_confirmation_labels.push(syncLabel);
 }
 
 function bindDocumentWhatsApp(doctype) {
