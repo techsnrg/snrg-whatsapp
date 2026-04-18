@@ -14,7 +14,8 @@ FIELD_SEQUENCE = [
     ("customer_confirmation_payload", "customer_confirmation_notes"),
     ("customer_confirmation_token", "customer_confirmation_payload"),
     ("customer_confirmation_outbound_message_id", "customer_confirmation_token"),
-    ("customer_confirmation_outbound_conversation_id", "customer_confirmation_outbound_message_id"),
+    ("customer_confirmation_outbound_external_id", "customer_confirmation_outbound_message_id"),
+    ("customer_confirmation_outbound_conversation_id", "customer_confirmation_outbound_external_id"),
     ("customer_confirmation_outbound_contact", "customer_confirmation_outbound_conversation_id"),
 ]
 
@@ -33,6 +34,7 @@ def execute():
         custom_field.hidden = 1 if fieldname in {
             "customer_confirmation_token",
             "customer_confirmation_outbound_message_id",
+            "customer_confirmation_outbound_external_id",
             "customer_confirmation_outbound_conversation_id",
             "customer_confirmation_outbound_contact",
         } else 0

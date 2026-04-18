@@ -425,13 +425,15 @@ def _deliver_document_whatsapp(
         filename=filename,
     )
 
-    message_id = response.get("source_id") if isinstance(response, dict) else None
+    message_id = _extract_chatwoot_message_id(response)
+    external_id = _extract_chatwoot_external_message_id(response)
     conversation_id = _extract_chatwoot_conversation_id(response)
     if doctype == "Quotation":
         _record_quotation_outbound_confirmation_context(
             doc,
             recipient=recipient,
             message_id=message_id,
+            external_id=external_id,
             conversation_id=conversation_id,
         )
 
@@ -439,7 +441,7 @@ def _deliver_document_whatsapp(
     _add_timeline_note(
         doc,
         automation["send_marker"],
-        f"Recipient: {recipient} | Message ID: {message_id or 'n/a'} | Conversation ID: {conversation_id or 'n/a'}{suffix}",
+        f"Recipient: {recipient} | Message ID: {message_id or 'n/a'} | External ID: {external_id or 'n/a'} | Conversation ID: {conversation_id or 'n/a'}{suffix}",
     )
 
     frappe.logger().info(
@@ -1266,6 +1268,7 @@ def _normalize_confirmation_text(value):
 def _resolve_quotation_for_confirmation(payload):
     matchers = [
         _find_quotation_by_referenced_message,
+        _find_quotation_by_referenced_external_id,
         _find_quotation_by_conversation,
         _find_quotation_by_explicit_reference,
         _find_quotation_by_contact,
@@ -1284,6 +1287,15 @@ def _find_quotation_by_referenced_message(payload):
 
     matches = _find_quotations_by_field("customer_confirmation_outbound_message_id", referenced_message_id)
     return _resolve_unique_quotation_match(matches, "Quoted message matches multiple quotations.")
+
+
+def _find_quotation_by_referenced_external_id(payload):
+    referenced_external_id = _extract_referenced_external_message_id(payload)
+    if not referenced_external_id:
+        return None
+
+    matches = _find_quotations_by_field("customer_confirmation_outbound_external_id", referenced_external_id)
+    return _resolve_unique_quotation_match(matches, "Quoted external message matches multiple quotations.")
 
 
 def _find_quotation_by_conversation(payload):
@@ -1395,11 +1407,23 @@ def _extract_referenced_message_id(payload):
     return None
 
 
+def _extract_referenced_external_message_id(payload):
+    message = _get_message_payload(payload)
+    content_attributes = message.get("content_attributes") or {}
+    for candidate in (
+        content_attributes.get("in_reply_to_external_id"),
+        content_attributes.get("quoted_message_external_id"),
+    ):
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None
+
+
 def _extract_event_id(payload):
     message = _get_message_payload(payload)
     for candidate in (
-        message.get("source_id"),
         message.get("id"),
+        message.get("source_id"),
         payload.get("id"),
         payload.get("source_id"),
     ):
@@ -1431,6 +1455,32 @@ def _extract_chatwoot_conversation_id(response):
         response.get("conversation_id"),
         conversation.get("id"),
         conversation.get("display_id"),
+    ):
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None
+
+
+def _extract_chatwoot_message_id(response):
+    if not isinstance(response, dict):
+        return None
+
+    for candidate in (
+        response.get("id"),
+        response.get("message_id"),
+    ):
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None
+
+
+def _extract_chatwoot_external_message_id(response):
+    if not isinstance(response, dict):
+        return None
+
+    for candidate in (
+        response.get("source_id"),
+        response.get("external_id"),
     ):
         if candidate not in (None, ""):
             return str(candidate)
@@ -1552,7 +1602,7 @@ def _set_quotation_confirmation_fields(doc, fields):
         doc.set(fieldname, value)
 
 
-def _record_quotation_outbound_confirmation_context(doc, recipient, message_id, conversation_id):
+def _record_quotation_outbound_confirmation_context(doc, recipient, message_id, external_id, conversation_id):
     fields = {
         "customer_confirmation_status": CONFIRMATION_PENDING,
         "customer_confirmation_source": CONFIRMATION_SOURCE_WHATSAPP,
@@ -1562,6 +1612,7 @@ def _record_quotation_outbound_confirmation_context(doc, recipient, message_id, 
         "customer_confirmation_contact": None,
         "customer_confirmation_payload": None,
         "customer_confirmation_outbound_message_id": message_id,
+        "customer_confirmation_outbound_external_id": external_id,
         "customer_confirmation_outbound_conversation_id": conversation_id,
         "customer_confirmation_outbound_contact": recipient,
         "customer_confirmation_token": doc.get("customer_confirmation_token") or _get_or_create_confirmation_token(doc),
