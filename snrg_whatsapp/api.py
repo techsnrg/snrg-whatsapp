@@ -167,6 +167,74 @@ def send_payment_entry_whatsapp(payment_entry_name, raise_on_error=False, force=
     )
 
 
+def enqueue_pending_customer_confirmation_sync():
+    _ensure_quotation_confirmation_setup()
+    frappe.enqueue(
+        "snrg_whatsapp.api.sync_pending_customer_confirmations",
+        queue="long",
+        timeout=600,
+        enqueue_after_commit=True,
+    )
+
+
+def sync_pending_customer_confirmations(batch_size=20, max_age_days=14):
+    _ensure_quotation_confirmation_setup()
+    if not _can_sync_pending_customer_confirmations():
+        return {"status": "skipped", "message": "Customer confirmation fields are not ready."}
+
+    batch_size = max(1, cint_or_none(batch_size, default=20) or 20)
+    max_age_days = max(1, cint_or_none(max_age_days, default=14) or 14)
+
+    pending_rows = frappe.get_all(
+        "Quotation",
+        filters={
+            "docstatus": 1,
+            "customer_confirmation_status": CONFIRMATION_PENDING,
+            "customer_confirmation_source": CONFIRMATION_SOURCE_WHATSAPP,
+            "modified": [">=", frappe.utils.add_days(frappe.utils.now_datetime(), -max_age_days)],
+            "customer_confirmation_outbound_conversation_id": ["is", "set"],
+            "customer_confirmation_outbound_message_id": ["is", "set"],
+        },
+        fields=["name"],
+        order_by="modified asc",
+        limit=batch_size,
+    )
+
+    summary = {
+        "status": "completed",
+        "scanned": len(pending_rows),
+        "processed": 0,
+        "duplicates": 0,
+        "not_found": 0,
+        "ignored": 0,
+        "errors": 0,
+    }
+
+    for row in pending_rows:
+        try:
+            quotation = frappe.get_doc("Quotation", row.name)
+            result = _sync_customer_confirmation_from_chatwoot(quotation)
+            status = result.get("status")
+            if status == "processed":
+                summary["processed"] += 1
+                frappe.db.commit()
+            elif status == "duplicate":
+                summary["duplicates"] += 1
+            elif status == "not_found":
+                summary["not_found"] += 1
+            else:
+                summary["ignored"] += 1
+        except Exception:
+            summary["errors"] += 1
+            frappe.db.rollback()
+            frappe.log_error(
+                title="SNRG WhatsApp pending confirmation sync failed",
+                message=frappe.get_traceback(),
+            )
+
+    return summary
+
+
 @frappe.whitelist(allow_guest=True)
 def handle_chatwoot_confirmation_webhook():
     _ensure_quotation_confirmation_setup()
@@ -1800,6 +1868,16 @@ def _ensure_quotation_confirmation_setup():
     reposition_confirmation_fields()
     frappe.clear_cache(doctype="Quotation")
     return True
+
+
+def _can_sync_pending_customer_confirmations():
+    required_columns = (
+        "customer_confirmation_status",
+        "customer_confirmation_source",
+        "customer_confirmation_outbound_conversation_id",
+        "customer_confirmation_outbound_message_id",
+    )
+    return all(frappe.db.has_column("Quotation", fieldname) for fieldname in required_columns)
 
 
 def _set_quotation_confirmation_fields(doc, fields):
