@@ -24,6 +24,14 @@
   "report_section",
   "whatsapp_report_template_name",
   "whatsapp_report_template_language",
+  "cash_discount_section",
+  "enable_cash_discount_whatsapp_reminders",
+  "whatsapp_cash_discount_summary_template_name",
+  "whatsapp_cash_discount_summary_template_language",
+  "whatsapp_cash_discount_blocked_template_name",
+  "whatsapp_cash_discount_blocked_template_language",
+  "whatsapp_cash_discount_alert_template_name",
+  "whatsapp_cash_discount_alert_template_language",
   "payment_section",
   "enable_payment_entry_whatsapp_on_submit",
   "whatsapp_payment_entry_template_name",
@@ -149,6 +157,59 @@
    "fieldname": "whatsapp_report_template_language",
    "fieldtype": "Data",
    "label": "Report Template Language",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cash_discount_section",
+   "fieldtype": "Section Break",
+   "label": "Cash Discount Reminders"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_cash_discount_whatsapp_reminders",
+   "fieldtype": "Check",
+   "label": "Enable Cash Discount WhatsApp Reminders"
+  },
+  {
+   "default": "cash_discount_weekly_summary",
+   "fieldname": "whatsapp_cash_discount_summary_template_name",
+   "fieldtype": "Data",
+   "label": "Cash Discount Summary Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en",
+   "fieldname": "whatsapp_cash_discount_summary_template_language",
+   "fieldtype": "Data",
+   "label": "Cash Discount Summary Template Language",
+   "reqd": 1
+  },
+  {
+   "default": "cash_discount_blocked_notice",
+   "fieldname": "whatsapp_cash_discount_blocked_template_name",
+   "fieldtype": "Data",
+   "label": "Cash Discount Blocked Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en",
+   "fieldname": "whatsapp_cash_discount_blocked_template_language",
+   "fieldtype": "Data",
+   "label": "Cash Discount Blocked Template Language",
+   "reqd": 1
+  },
+  {
+   "default": "cash_discount_slab_drop_alert",
+   "fieldname": "whatsapp_cash_discount_alert_template_name",
+   "fieldtype": "Data",
+   "label": "Cash Discount Alert Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en",
+   "fieldname": "whatsapp_cash_discount_alert_template_language",
+   "fieldtype": "Data",
+   "label": "Cash Discount Alert Template Language",
    "reqd": 1
   },
   {

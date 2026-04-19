@@ -28,6 +28,12 @@ scheduler_events = {
     "cron": {
         "*/30 * * * *": [
             "snrg_whatsapp.api.enqueue_pending_customer_confirmation_sync",
-        ]
+        ],
+        "0 10 * * 1": [
+            "snrg_whatsapp.api.enqueue_cash_discount_weekly_reminders",
+        ],
+        "0 10 * * *": [
+            "snrg_whatsapp.api.enqueue_cash_discount_daily_alerts",
+        ],
     }
 }
