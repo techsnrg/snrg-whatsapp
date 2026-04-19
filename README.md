@@ -45,9 +45,14 @@ bench restart
 ## Notes
 
 - The approved WhatsApp template must include a `document` header.
+- Configure a Chatwoot webhook to `POST` inbound message events to `/api/method/snrg_whatsapp.api.handle_chatwoot_confirmation_webhook`.
+- Add the Chatwoot webhook secret in `SNRG WhatsApp Settings` on Desk. `site_config.json` still works as a fallback for existing setups.
 - The Quotation, Sales Invoice, and Payment Entry submit hooks queue WhatsApp sends in the background.
+- Pending Quotation confirmations are also re-synced from Chatwoot every 30 minutes in small background batches, so older pending replies can be picked up without opening the form.
 - ERPNext sends through Chatwoot, so outgoing messages appear in the Chatwoot conversation thread.
 - Mobile lookup prefers document-level contact mobile, then customer mobile, then contact mobile. Payment Entry can also fall back to linked Sales Invoice contact details.
+- Quotation sends now persist outbound Chatwoot message and conversation ids so inbound customer confirmations can be matched back safely.
+- The Quotation form includes both a manual customer-confirmation override and a `Sync from Chatwoot` fallback action for privileged users, and stores an audit comment.
 - This app is intentionally backend-only and does not add a Desk module or frontend UI.
 - Successful sends are marked on the document timeline to prevent duplicate sends on repeat execution.
 - Customer Payment Entry sends only run for `party_type = Customer`; supplier payments are skipped.

@@ -6,6 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "settings_note",
+  "chatwoot_section",
+  "chatwoot_webhook_secret",
   "quotation_section",
   "enable_quotation_whatsapp_on_submit",
   "whatsapp_quotation_template_name",
@@ -35,8 +37,18 @@
    "fieldname": "settings_note",
    "fieldtype": "HTML",
    "label": "Settings Note",
-   "options": "<p>Configure WhatsApp templates, languages, print formats, and automation toggles here. Chatwoot connection credentials stay in <code>site_config.json</code> / Frappe Cloud site config.</p>",
+   "options": "<p>Configure WhatsApp templates, languages, print formats, automation toggles, and webhook verification here. Chatwoot base URL, account, inbox, and API token can stay in <code>site_config.json</code> / Frappe Cloud site config.</p>",
    "read_only": 1
+  },
+  {
+   "fieldname": "chatwoot_section",
+   "fieldtype": "Section Break",
+   "label": "Chatwoot"
+  },
+  {
+   "fieldname": "chatwoot_webhook_secret",
+   "fieldtype": "Password",
+   "label": "Chatwoot Webhook Secret"
   },
   {
    "fieldname": "quotation_section",

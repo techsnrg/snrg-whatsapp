@@ -1,4 +1,5 @@
 const GROUP_LABEL = __("Send WhatsApp");
+const CONFIRMATION_GROUP_LABEL = __("Customer Confirmation");
 
 function getWhatsAppMessage(response, fallback) {
 	return (response && response.message && response.message.message) || fallback;
@@ -43,6 +44,33 @@ async function sendDocumentWhatsApp(doctype, docname, recipient) {
 	}
 }
 
+async function ensureCustomerConfirmationSetup(frm, doctype) {
+	if (doctype !== "Quotation" || frm.is_new() || frm.doc.docstatus !== 1) return false;
+	if (frm.fields_dict.customer_confirmation_status) return false;
+	if (frm.__snrg_confirmation_setup_checked) return false;
+
+	frm.__snrg_confirmation_setup_checked = true;
+
+	try {
+		const response = await frappe.call({
+			method: "snrg_whatsapp.api.ensure_customer_confirmation_setup",
+		});
+		const created = !!(response && response.message && response.message.created);
+		if (created || frm.fields_dict.customer_confirmation_status) {
+			frappe.show_alert({
+				message: __("Customer confirmation fields were initialized. Reloading the form..."),
+				indicator: "green",
+			});
+			setTimeout(() => window.location.reload(), 500);
+			return true;
+		}
+	} catch (error) {
+		console.error("Failed to initialize customer confirmation fields", error);
+	}
+
+	return false;
+}
+
 async function setupDocumentWhatsAppButtons(frm, doctype) {
 	if (frm.is_new() || frm.doc.docstatus !== 1) return;
 
@@ -77,21 +105,125 @@ async function setupDocumentWhatsAppButtons(frm, doctype) {
 	}
 }
 
+function setupConfirmationButton(frm, doctype) {
+	if (doctype !== "Quotation" || frm.is_new() || frm.doc.docstatus !== 1) return;
+
+	const existingLabels = frm.__snrg_confirmation_labels || [];
+	existingLabels.forEach((label) => frm.remove_custom_button(label, CONFIRMATION_GROUP_LABEL));
+	frm.__snrg_confirmation_labels = [];
+
+	const label = __("Set Status");
+	frm.add_custom_button(
+		label,
+		() => {
+			frappe.prompt(
+				[
+					{
+						fieldname: "status",
+						fieldtype: "Select",
+						label: __("Status"),
+						options: ["Pending", "Confirmed", "Changes Requested"].join("\n"),
+						reqd: 1,
+						default: frm.doc.customer_confirmation_status || "Pending",
+					},
+					{
+						fieldname: "notes",
+						fieldtype: "Small Text",
+						label: __("Notes"),
+						reqd: 1,
+					},
+				],
+				async (values) => {
+					try {
+						const response = await frappe.call({
+							method: "snrg_whatsapp.api.set_customer_confirmation_status",
+							args: {
+								quotation_name: frm.doc.name,
+								status: values.status,
+								notes: values.notes,
+							},
+							freeze: true,
+							freeze_message: __("Updating confirmation..."),
+						});
+						frappe.show_alert({
+							message: getWhatsAppMessage(response, __("Customer confirmation updated.")),
+							indicator: "green",
+						});
+						await frm.reload_doc();
+					} catch (error) {
+						console.error("Failed to update confirmation", error);
+						frappe.show_alert({
+							message: __("Could not update customer confirmation."),
+							indicator: "red",
+						});
+					}
+				},
+				__("Set Customer Confirmation"),
+				__("Update")
+			);
+		},
+		CONFIRMATION_GROUP_LABEL
+	);
+	frm.__snrg_confirmation_labels.push(label);
+
+	const syncLabel = __("Sync from Chatwoot");
+	frm.add_custom_button(
+		syncLabel,
+		async () => {
+			try {
+				const response = await frappe.call({
+					method: "snrg_whatsapp.api.sync_customer_confirmation_from_chatwoot",
+					args: {
+						quotation_name: frm.doc.name,
+					},
+					freeze: true,
+					freeze_message: __("Syncing confirmation from Chatwoot..."),
+				});
+				const result = response && response.message;
+				frappe.show_alert({
+					message: getWhatsAppMessage(response, (result && result.message) || __("Chatwoot sync completed.")),
+					indicator: result && result.status === "processed" ? "green" : "orange",
+				});
+				await frm.reload_doc();
+			} catch (error) {
+				console.error("Failed to sync confirmation from Chatwoot", error);
+				frappe.show_alert({
+					message: __("Could not sync customer confirmation from Chatwoot."),
+					indicator: "red",
+				});
+			}
+		},
+		CONFIRMATION_GROUP_LABEL
+	);
+	frm.__snrg_confirmation_labels.push(syncLabel);
+}
+
 function bindDocumentWhatsApp(doctype) {
 	frappe.ui.form.on(doctype, {
 		refresh(frm) {
 			frappe.after_ajax(() => {
-				setTimeout(() => setupDocumentWhatsAppButtons(frm, doctype), 300);
+				setTimeout(async () => {
+					const reloading = await ensureCustomerConfirmationSetup(frm, doctype);
+					if (reloading) return;
+					setupDocumentWhatsAppButtons(frm, doctype);
+					setupConfirmationButton(frm, doctype);
+				}, 300);
 			});
 		},
 		after_save(frm) {
 			frappe.after_ajax(() => {
-				setTimeout(() => setupDocumentWhatsAppButtons(frm, doctype), 300);
+				setTimeout(() => {
+					setupDocumentWhatsAppButtons(frm, doctype);
+					setupConfirmationButton(frm, doctype);
+				}, 300);
 			});
 		},
 		on_submit(frm) {
 			frappe.after_ajax(() => {
-				setTimeout(() => setupDocumentWhatsAppButtons(frm, doctype), 300);
+				setTimeout(() => {
+					setupDocumentWhatsAppButtons(frm, doctype);
+					setupConfirmationButton(frm, doctype);
+				}, 300);
 			});
 		},
 	});

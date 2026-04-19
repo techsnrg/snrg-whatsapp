@@ -23,3 +23,11 @@ doc_events = {
         "on_submit": "snrg_whatsapp.api.enqueue_payment_entry_whatsapp",
     },
 }
+
+scheduler_events = {
+    "cron": {
+        "*/30 * * * *": [
+            "snrg_whatsapp.api.enqueue_pending_customer_confirmation_sync",
+        ]
+    }
+}
