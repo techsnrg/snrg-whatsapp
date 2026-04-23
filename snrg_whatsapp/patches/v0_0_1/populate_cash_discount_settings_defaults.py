@@ -16,7 +16,17 @@ def execute():
     if not frappe.db.exists("DocType", "SNRG WhatsApp Settings"):
         return
 
+    frappe.reload_doc("snrg_whatsapp", "doctype", "snrg_whatsapp_settings")
+
     for fieldname, value in DEFAULTS.items():
+        if not frappe.db.exists(
+            "DocField",
+            {
+                "parent": "SNRG WhatsApp Settings",
+                "fieldname": fieldname,
+            },
+        ):
+            continue
         current = frappe.db.get_single_value("SNRG WhatsApp Settings", fieldname)
         if current in (None, ""):
             frappe.db.set_single_value("SNRG WhatsApp Settings", fieldname, value)
