@@ -2,6 +2,17 @@
 
 Headless Frappe app for ERPNext-to-WhatsApp automations using Chatwoot's WhatsApp inbox.
 
+## ERPNext Compatibility
+
+This app is intended to run on both ERPNext/Frappe v15 and v16 from the same main branch.
+
+Compatibility rules for future changes:
+
+- Keep framework-specific differences behind helper functions in `snrg_whatsapp/api.py`.
+- Treat custom ERPNext fields as optional unless this app creates them during migrate.
+- Avoid importing optional companion apps, such as Customer Ledger, at module import time.
+- Prefer stable document, hook, scheduler, and whitelisted-method APIs over direct framework internals.
+
 Initial feature:
 - Send approved WhatsApp quotation template with Quotation PDF when a Quotation is submitted.
 - Send approved WhatsApp invoice template with Sales Invoice PDF when a Sales Invoice is submitted.

@@ -4,6 +4,7 @@ app_publisher = "SNRG"
 app_description = "WhatsApp automations for ERPNext using Chatwoot"
 app_email = "hello@aerele.in"
 app_license = "mit"
+required_apps = ["erpnext"]
 
 app_include_js = "/assets/snrg_whatsapp/js/snrg_whatsapp_ui.js"
 

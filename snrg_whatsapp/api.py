@@ -190,7 +190,7 @@ def send_payment_entry_whatsapp(payment_entry_name, raise_on_error=False, force=
 
 def enqueue_pending_customer_confirmation_sync():
     _ensure_quotation_confirmation_setup()
-    frappe.enqueue(
+    _enqueue_background_job(
         "snrg_whatsapp.api.sync_pending_customer_confirmations",
         queue="long",
         timeout=600,
@@ -260,7 +260,7 @@ def enqueue_cash_discount_weekly_reminders():
     if not _is_cash_discount_reminders_enabled():
         return
 
-    frappe.enqueue(
+    _enqueue_background_job(
         "snrg_whatsapp.api.process_cash_discount_weekly_reminders",
         queue="long",
         timeout=1800,
@@ -412,7 +412,7 @@ def enqueue_cash_discount_daily_alerts():
     if not _is_cash_discount_reminders_enabled():
         return
 
-    frappe.enqueue(
+    _enqueue_background_job(
         "snrg_whatsapp.api.process_cash_discount_daily_alerts",
         queue="long",
         timeout=1800,
@@ -739,7 +739,7 @@ def _enqueue_whatsapp_send(doctype, docname):
     if not _is_send_enabled(automation):
         return
 
-    frappe.enqueue(
+    _enqueue_background_job(
         f"snrg_whatsapp.api.{automation['send_fn']}",
         queue="short",
         timeout=300,
@@ -859,6 +859,31 @@ def _get_common_config():
         frappe.throw("Missing WhatsApp config in site_config.json: " + ", ".join(missing))
 
     return config
+
+
+def _enqueue_background_job(method, **kwargs):
+    try:
+        return frappe.enqueue(method, **kwargs)
+    except TypeError:
+        if "enqueue_after_commit" not in kwargs:
+            raise
+        kwargs = dict(kwargs)
+        kwargs.pop("enqueue_after_commit", None)
+        return frappe.enqueue(method, **kwargs)
+
+
+def _doctype_has_field(doctype, fieldname):
+    try:
+        return bool(frappe.db.has_column(doctype, fieldname))
+    except Exception:
+        return False
+
+
+def _get_value_fields(doctype, name, fields):
+    available_fields = [fieldname for fieldname in fields if _doctype_has_field(doctype, fieldname)]
+    if not available_fields:
+        return frappe._dict()
+    return frappe.db.get_value(doctype, name, available_fields, as_dict=True) or frappe._dict()
 
 
 def _get_document_config(doc, automation):
@@ -1022,15 +1047,10 @@ def _get_customer_mobile_candidates(customer_name):
     if not customer_name or not frappe.db.exists("Customer", customer_name):
         return []
 
-    customer = frappe.db.get_value(
-        "Customer",
-        customer_name,
-        ["mobile_no", "custom_mobile_number"],
-        as_dict=True,
-    )
+    customer = _get_value_fields("Customer", customer_name, ["mobile_no", "custom_mobile_number"])
     candidates = []
     if customer:
-        candidates.extend([customer.mobile_no, customer.custom_mobile_number])
+        candidates.extend([customer.get("mobile_no"), customer.get("custom_mobile_number")])
 
     candidates.extend(_get_linked_contact_mobile_candidates("Customer", customer_name))
 
@@ -1043,7 +1063,7 @@ def _get_supplier_mobile_candidates(supplier_name):
 
     candidates = []
     for fieldname in ("mobile_no", "phone"):
-        if frappe.db.has_column("Supplier", fieldname):
+        if _doctype_has_field("Supplier", fieldname):
             candidates.append(frappe.db.get_value("Supplier", supplier_name, fieldname))
 
     candidates.extend(_get_linked_contact_mobile_candidates("Supplier", supplier_name))
@@ -1210,7 +1230,10 @@ def _add_timeline_note(doc, marker, detail):
 
 def _build_pdf(doc, print_format=None):
     chosen_print_format = print_format or doc.get("select_print_heading") or None
-    html = frappe.get_print(doc.doctype, doc.name, print_format=chosen_print_format, doc=doc)
+    try:
+        html = frappe.get_print(doc.doctype, doc.name, print_format=chosen_print_format, doc=doc)
+    except TypeError:
+        html = frappe.get_print(doc.doctype, doc.name, print_format=chosen_print_format)
     return get_pdf(html), f"{doc.name}.pdf"
 
 
@@ -1584,8 +1607,8 @@ def _can_run_cash_discount_reminders():
         "last_cash_discount_alert_on",
         "last_cash_discount_alert_boundary_day",
     )
-    return all(frappe.db.has_column("Customer", fieldname) for fieldname in customer_columns) and all(
-        frappe.db.has_column("Sales Invoice", fieldname) for fieldname in sales_invoice_columns
+    return all(_doctype_has_field("Customer", fieldname) for fieldname in customer_columns) and all(
+        _doctype_has_field("Sales Invoice", fieldname) for fieldname in sales_invoice_columns
     )
 
 
@@ -1624,7 +1647,7 @@ def _get_cash_discount_template_config(reminder_type):
 
 
 def _get_opted_in_cash_discount_customers():
-    if not frappe.db.has_column("Customer", "enable_whatsapp_cash_discount_reminders"):
+    if not _doctype_has_field("Customer", "enable_whatsapp_cash_discount_reminders"):
         return []
 
     fields = ["name"]
@@ -1633,11 +1656,11 @@ def _get_opted_in_cash_discount_customers():
         "last_cash_discount_weekly_message_on",
         "last_cash_discount_weekly_message_type",
     ):
-        if frappe.db.has_column("Customer", fieldname):
+        if _doctype_has_field("Customer", fieldname):
             fields.append(fieldname)
 
     filters = {"enable_whatsapp_cash_discount_reminders": 1}
-    if frappe.db.has_column("Customer", "disabled"):
+    if _doctype_has_field("Customer", "disabled"):
         filters["disabled"] = 0
 
     return frappe.get_all(
@@ -1672,7 +1695,7 @@ def _get_cash_discount_blocked_customers(customer_names, run_date):
         "outstanding_amount": [">", 0],
         "posting_date": ["<", add_days(run_date, -CASH_DISCOUNT_BLOCK_DAYS)],
     }
-    if frappe.db.has_column("Sales Invoice", "is_return"):
+    if _doctype_has_field("Sales Invoice", "is_return"):
         filters["is_return"] = 0
 
     rows = frappe.get_all(
@@ -1712,7 +1735,7 @@ def _get_cash_discount_invoice_contexts(customer_names, run_date, scheme):
         "last_cash_discount_alert_on",
         "last_cash_discount_alert_boundary_day",
     ):
-        if frappe.db.has_column("Sales Invoice", optional_field):
+        if _doctype_has_field("Sales Invoice", optional_field):
             fields.append(optional_field)
 
     filters = {
@@ -1721,7 +1744,7 @@ def _get_cash_discount_invoice_contexts(customer_names, run_date, scheme):
         "outstanding_amount": [">", 0],
         "posting_date": ["between", [add_days(run_date, -scheme.max_days), run_date]],
     }
-    if frappe.db.has_column("Sales Invoice", "is_return"):
+    if _doctype_has_field("Sales Invoice", "is_return"):
         filters["is_return"] = 0
 
     invoices = frappe.get_all(
@@ -1976,7 +1999,7 @@ def _set_cash_discount_alert_state(invoice_doc, run_date, boundary_day):
 
 def _set_document_fields_if_present(doc, fields):
     for fieldname, value in (fields or {}).items():
-        if not frappe.db.has_column(doc.doctype, fieldname):
+        if not _doctype_has_field(doc.doctype, fieldname):
             continue
         doc.db_set(fieldname, value, update_modified=False)
         doc.set(fieldname, value)
@@ -2504,7 +2527,7 @@ def _find_quotation_by_explicit_reference(payload):
             return frappe.get_doc("Quotation", candidate)
 
     token_matches = []
-    if frappe.db.has_column("Quotation", "customer_confirmation_token"):
+    if _doctype_has_field("Quotation", "customer_confirmation_token"):
         for token in candidates:
             token_matches.extend(_find_quotations_by_field("customer_confirmation_token", token))
     return _resolve_unique_quotation_match(token_matches, "Reference token matches multiple quotations.")
@@ -2542,7 +2565,7 @@ def _resolve_unique_quotation_match(matches, error_message):
 
 
 def _find_quotations_by_field(fieldname, value):
-    if not value or not frappe.db.has_column("Quotation", fieldname):
+    if not value or not _doctype_has_field("Quotation", fieldname):
         return []
 
     names = frappe.get_all(
@@ -2857,7 +2880,7 @@ def _ensure_quotation_confirmation_setup():
         "customer_confirmation_source",
         "customer_confirmation_notes",
     )
-    if all(frappe.db.has_column("Quotation", fieldname) for fieldname in required_columns) and all(
+    if all(_doctype_has_field("Quotation", fieldname) for fieldname in required_columns) and all(
         frappe.db.exists("Custom Field", f"Quotation-{fieldname}") for fieldname in required_custom_fields
     ):
         return False
@@ -2880,7 +2903,7 @@ def _can_sync_pending_customer_confirmations():
         "customer_confirmation_outbound_conversation_id",
         "customer_confirmation_outbound_message_id",
     )
-    return all(frappe.db.has_column("Quotation", fieldname) for fieldname in required_columns)
+    return all(_doctype_has_field("Quotation", fieldname) for fieldname in required_columns)
 
 
 def _set_quotation_confirmation_fields(doc, fields):
@@ -2890,7 +2913,7 @@ def _set_quotation_confirmation_fields(doc, fields):
     _ensure_quotation_confirmation_setup()
 
     for fieldname, value in fields.items():
-        if not frappe.db.has_column("Quotation", fieldname):
+        if not _doctype_has_field("Quotation", fieldname):
             continue
         doc.db_set(fieldname, value, update_modified=False)
         doc.set(fieldname, value)
@@ -3032,14 +3055,29 @@ def _build_customer_report_pdf(report_name, filters, include_ar, include_ledger)
         include_ar=include_ar,
         include_ledger=include_ledger,
     )
-    pdf_bytes = frappe.local.response.filecontent
-    filename = frappe.local.response.filename
-    frappe.local.response.type = "json"
-    frappe.local.response.filecontent = None
-    frappe.local.response.filename = None
+    pdf_bytes = _get_response_value("filecontent")
+    filename = _get_response_value("filename")
+    _set_response_value("type", "json")
+    _set_response_value("filecontent", None)
+    _set_response_value("filename", None)
     if not pdf_bytes or not filename:
         frappe.throw(f"Unable to generate PDF for {report_name}.")
     return filename, pdf_bytes
+
+
+def _get_response_value(key):
+    response = getattr(frappe.local, "response", None)
+    if isinstance(response, dict):
+        return response.get(key)
+    return getattr(response, key, None)
+
+
+def _set_response_value(key, value):
+    response = getattr(frappe.local, "response", None)
+    if isinstance(response, dict):
+        response[key] = value
+    elif response is not None:
+        setattr(response, key, value)
 
 
 def _parse_chatwoot_response(response, action):
