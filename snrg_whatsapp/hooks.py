@@ -6,12 +6,6 @@ app_email = "hello@aerele.in"
 app_license = "mit"
 required_apps = ["erpnext"]
 
-# Frappe Cloud's v16 migration scheduler expects app compatibility versions
-# as NPM-style semver ranges, not branch names or Python package versions.
-app_version = ">=15.0.0 <17.0.0"
-frappe_version = ">=15.0.0 <17.0.0"
-erpnext_version = ">=15.0.0 <17.0.0"
-
 app_include_js = "/assets/snrg_whatsapp/js/snrg_whatsapp_ui.js"
 
 doctype_js = {
