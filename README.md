@@ -5,7 +5,7 @@ Headless Frappe app for ERPNext-to-WhatsApp automations using Chatwoot's WhatsAp
 ## ERPNext Compatibility
 
 This app is intended to run on both ERPNext/Frappe v15 and v16 from the same main branch.
-The bench dependency compatibility metadata uses the migration range `>=15.0.0,<17.0.0`.
+The bench dependency compatibility metadata pins Frappe and ERPNext to `>=15.0.0,<17.0.0`.
 
 Compatibility rules for future changes:
 

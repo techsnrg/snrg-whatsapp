@@ -14,7 +14,6 @@ dependencies = [
 [tool.bench.frappe-dependencies]
 frappe = ">=15.0.0,<17.0.0"
 erpnext = ">=15.0.0,<17.0.0"
-snrg_whatsapp = ">=15.0.0,<17.0.0"
 
 [build-system]
 requires = ["setuptools>=61"]
