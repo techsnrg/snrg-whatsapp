@@ -16,6 +16,7 @@ doctype_js = {
 doc_events = {
     "Quotation": {
         "on_submit": "snrg_whatsapp.api.enqueue_sales_quotation_whatsapp",
+        "on_cancel": "snrg_whatsapp.api.enqueue_sales_quotation_cancellation_whatsapp",
     },
     "Sales Invoice": {
         "on_submit": "snrg_whatsapp.api.enqueue_sales_invoice_whatsapp",

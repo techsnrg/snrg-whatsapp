@@ -36,6 +36,9 @@ Add these keys to `site_config.json` for the ERPNext site:
   "whatsapp_quotation_template_name": "sales_quotation_confirmation",
   "whatsapp_quotation_template_language": "en_US",
   "whatsapp_quotation_print_format": "Quotation",
+  "enable_quotation_whatsapp_on_cancel": 1,
+  "whatsapp_quotation_cancellation_template_name": "sales_quotation_cancellation",
+  "whatsapp_quotation_cancellation_template_language": "en_US",
   "whatsapp_sales_invoice_template_name": "sales_invoice_erpnext",
   "whatsapp_sales_invoice_template_language": "en",
   "whatsapp_sales_invoice_print_format": "Sales Invoice New",
@@ -57,10 +60,11 @@ bench restart
 
 ## Notes
 
-- The approved WhatsApp template must include a `document` header.
+- Approved templates that send a PDF must include a `document` header.
+- Quotation cancellation uses the body-only `sales_quotation_cancellation` utility template with variables: customer name, quotation number, and quotation date.
 - Configure a Chatwoot webhook to `POST` inbound message events to `/api/method/snrg_whatsapp.api.handle_chatwoot_confirmation_webhook`.
 - Add the Chatwoot webhook secret in `SNRG WhatsApp Settings` on Desk. `site_config.json` still works as a fallback for existing setups.
-- The Quotation, Sales Invoice, and Payment Entry submit hooks queue WhatsApp sends in the background.
+- Quotation submit/cancel, Sales Invoice submit, and Payment Entry submit hooks queue WhatsApp sends in the background.
 - Pending Quotation confirmations are also re-synced from Chatwoot every 30 minutes in small background batches, so older pending replies can be picked up without opening the form.
 - ERPNext sends through Chatwoot, so outgoing messages appear in the Chatwoot conversation thread.
 - Mobile lookup prefers document-level contact mobile, then customer mobile, then contact mobile. Payment Entry can also fall back to linked Sales Invoice contact details.
@@ -70,6 +74,19 @@ bench restart
 - Successful sends are marked on the document timeline to prevent duplicate sends on repeat execution.
 - Customer Payment Entry sends only run for `party_type = Customer`; supplier payments are skipped.
 - Set each `enable_*_whatsapp_on_submit` flag to `0` on production if you want the app installed before enabling a given automation.
+
+Recommended `sales_quotation_cancellation` template body:
+
+```text
+Dear {{1}},
+
+This is to inform you that quotation {{2}} dated {{3}} has been cancelled in our records.
+
+If you believe this has occurred in error or require any clarification, please reply to this message or contact us.
+
+Regards,
+SNRG Electricals India Private Limited
+```
 
 ## Cash Discount Reminders
 

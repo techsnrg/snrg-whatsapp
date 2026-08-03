@@ -27,6 +27,12 @@ CONFIRMATION_EVENT_MARKER = "SNRG WhatsApp customer confirmation processed"
 CONFIRMATION_MANUAL_MARKER = "SNRG WhatsApp customer confirmation set manually"
 CONFIRMATION_UNMATCHED_TITLE = "SNRG WhatsApp customer confirmation unmatched"
 CONFIRMATION_AMBIGUOUS_TITLE = "SNRG WhatsApp customer confirmation ambiguous"
+QUOTATION_CANCELLATION_ENABLE_KEY = "enable_quotation_whatsapp_on_cancel"
+QUOTATION_CANCELLATION_TEMPLATE_NAME_KEY = "whatsapp_quotation_cancellation_template_name"
+QUOTATION_CANCELLATION_TEMPLATE_NAME_DEFAULT = "sales_quotation_cancellation"
+QUOTATION_CANCELLATION_TEMPLATE_LANGUAGE_KEY = "whatsapp_quotation_cancellation_template_language"
+QUOTATION_CANCELLATION_SENT_MARKER = "SNRG WhatsApp quotation cancellation sent"
+QUOTATION_CANCELLATION_FAILURE_MARKER = "SNRG WhatsApp quotation cancellation failed"
 CHATWOOT_MAX_SIGNATURE_AGE_SECONDS = 300
 CASH_DISCOUNT_SCHEME_DOCTYPE = "CD Scheme"
 CASH_DISCOUNT_REMINDER_ENABLE_KEY = "enable_cash_discount_whatsapp_reminders"
@@ -160,6 +166,89 @@ def enqueue_sales_quotation_whatsapp(doc, method=None):
 
 def send_sales_quotation_whatsapp(quotation_name, raise_on_error=False, force=False):
     _send_document_whatsapp("Quotation", quotation_name, raise_on_error=raise_on_error, force=force)
+
+
+def enqueue_sales_quotation_cancellation_whatsapp(doc, method=None):
+    if cint_or_none(_get_whatsapp_setting(QUOTATION_CANCELLATION_ENABLE_KEY, default=1), default=1) != 1:
+        return
+
+    _enqueue_background_job(
+        "snrg_whatsapp.api.send_sales_quotation_cancellation_whatsapp",
+        queue="short",
+        timeout=300,
+        enqueue_after_commit=True,
+        quotation_name=doc.name,
+    )
+
+
+def send_sales_quotation_cancellation_whatsapp(quotation_name, raise_on_error=False):
+    try:
+        _deliver_sales_quotation_cancellation_whatsapp(quotation_name)
+    except Exception:
+        frappe.db.rollback()
+        safe_name = quotation_name or "Unknown"
+        frappe.log_error(
+            message=frappe.get_traceback(),
+            title=f"{QUOTATION_CANCELLATION_FAILURE_MARKER}: {safe_name}",
+        )
+        if frappe.db.exists("Quotation", safe_name):
+            quotation = frappe.get_doc("Quotation", safe_name)
+            _add_timeline_note(
+                quotation,
+                QUOTATION_CANCELLATION_FAILURE_MARKER,
+                "See Error Log for traceback.",
+            )
+        if raise_on_error:
+            raise
+
+
+def _deliver_sales_quotation_cancellation_whatsapp(quotation_name):
+    quotation = frappe.get_doc("Quotation", quotation_name)
+    if quotation.docstatus != 2:
+        return None
+
+    if _already_sent(quotation, QUOTATION_CANCELLATION_SENT_MARKER):
+        return None
+
+    automation = AUTOMATIONS["Quotation"]
+    recipient = _get_recipient_number(quotation, automation)
+    if not recipient:
+        _add_timeline_note(
+            quotation,
+            QUOTATION_CANCELLATION_FAILURE_MARKER,
+            "No mobile number found.",
+        )
+        return None
+
+    response = _send_cash_discount_template_message(
+        config=_get_common_config(),
+        recipient=recipient,
+        template_config={
+            "template_name": _get_whatsapp_setting(
+                QUOTATION_CANCELLATION_TEMPLATE_NAME_KEY,
+                default=QUOTATION_CANCELLATION_TEMPLATE_NAME_DEFAULT,
+            ),
+            "template_language": _get_whatsapp_setting(
+                QUOTATION_CANCELLATION_TEMPLATE_LANGUAGE_KEY,
+                default=DEFAULT_TEMPLATE_LANGUAGE,
+            ),
+        },
+        content=_render_quotation_cancellation_preview(quotation),
+        body={
+            "1": _get_contact_name(quotation, automation),
+            "2": quotation.name,
+            "3": formatdate(quotation.transaction_date),
+        },
+        contact_name=_get_contact_name(quotation, automation),
+        action="send quotation cancellation template via Chatwoot",
+    )
+    _add_timeline_note(
+        quotation,
+        QUOTATION_CANCELLATION_SENT_MARKER,
+        _build_cash_discount_message_detail(recipient=recipient, response=response),
+    )
+    frappe.db.commit()
+    return response
 
 
 def enqueue_sales_invoice_whatsapp(doc, method=None):
@@ -1540,6 +1629,17 @@ def _render_quotation_preview(doc):
         f"Your quotation {doc.name} dated {formatdate(doc.transaction_date)} is generated.\n\n"
         "Please acknowledge receipt of this quotation. In case of any clarification or "
         "modification required, you may respond to this message.\n\n"
+        "Regards,\nSNRG Electricals India Private Limited"
+    )
+
+
+def _render_quotation_cancellation_preview(doc):
+    return (
+        f"Dear {_safe_name(doc.customer_name or doc.party_name)},\n\n"
+        f"This is to inform you that quotation {doc.name} dated "
+        f"{formatdate(doc.transaction_date)} has been cancelled in our records.\n\n"
+        "If you believe this has occurred in error or require any clarification, "
+        "please reply to this message or contact us.\n\n"
         "Regards,\nSNRG Electricals India Private Limited"
     )
 

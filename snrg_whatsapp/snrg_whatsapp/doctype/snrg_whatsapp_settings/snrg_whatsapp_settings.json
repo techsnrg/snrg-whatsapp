@@ -13,6 +13,9 @@
   "whatsapp_quotation_template_name",
   "whatsapp_quotation_template_language",
   "whatsapp_quotation_print_format",
+  "enable_quotation_whatsapp_on_cancel",
+  "whatsapp_quotation_cancellation_template_name",
+  "whatsapp_quotation_cancellation_template_language",
   "invoice_section",
   "enable_sales_invoice_whatsapp_on_submit",
   "whatsapp_sales_invoice_template_name",
@@ -88,6 +91,26 @@
    "fieldname": "whatsapp_quotation_print_format",
    "fieldtype": "Data",
    "label": "Quotation Print Format"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_quotation_whatsapp_on_cancel",
+   "fieldtype": "Check",
+   "label": "Enable Quotation WhatsApp On Cancel"
+  },
+  {
+   "default": "sales_quotation_cancellation",
+   "fieldname": "whatsapp_quotation_cancellation_template_name",
+   "fieldtype": "Data",
+   "label": "Quotation Cancellation Template Name",
+   "reqd": 1
+  },
+  {
+   "default": "en_US",
+   "fieldname": "whatsapp_quotation_cancellation_template_language",
+   "fieldtype": "Data",
+   "label": "Quotation Cancellation Template Language",
+   "reqd": 1
   },
   {
    "fieldname": "invoice_section",
