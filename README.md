@@ -122,3 +122,59 @@ Recommended WhatsApp body placeholders:
   - `4` current CD amount
   - `5` current CD %
   - `6` slab drop date
+
+## WhatsApp Templates and Campaigns
+
+Run `bench --site <site> migrate` after deploying the updated app. Enable the
+site scheduler and run the long-queue worker. The existing Chatwoot settings
+identify the inbox used for all campaigns. The pilot screens and actions are
+available to System Managers.
+
+Add these server-side site config settings:
+
+| Key | Value |
+| --- | --- |
+| `snrg_whatsapp_waba_id` | WABA ID behind the configured Chatwoot Cloud API inbox |
+| `snrg_whatsapp_graph_version` | Supported Meta Graph API version, including the `v` prefix |
+| `snrg_whatsapp_meta_token` | Meta token with `whatsapp_business_management` and access to this WABA |
+| `snrg_whatsapp_meta_app_id` | Meta app ID used to upload sample images for template approval |
+| `snrg_whatsapp_test_number` | Internal WhatsApp test number in international format |
+| `snrg_whatsapp_campaigns_enabled` | Defaults to 0. Set to 1 to explicitly enable campaign sending. Preview and template sync work while sending is disabled. |
+| `snrg_whatsapp_campaign_batch_size` | Optional. Messages per scheduler batch, from 1 to 10. Default 3. |
+
+Keep the Meta and Chatwoot tokens on the server. Open **SNRG WhatsApp
+Template** through the Desk search, then click **Refresh Templates**. Create a
+draft Utility or Marketing template and submit it to Meta. Enter one example
+per numbered placeholder in order. For an Image header, save the draft, then
+upload a JPEG or PNG sample directly to the record. The app syncs Meta template
+status every 30 minutes. Sync approved templates to the configured Chatwoot
+inbox as well if they are not there yet.
+
+From the Customer list, select customers and choose **Create WhatsApp Campaign**
+under Actions. Pick a template, set its variables, save, and click **Preview
+Recipients**. For image campaigns, save once, upload the campaign image directly
+to the record, save again, and run the preview. For now, the campaign uses a
+single JPEG or PNG up to 5 MB and personalized body text. Chatwoot must return
+an HTTPS media URL accessible to WhatsApp throughout the send. Use private
+ERPNext attachments where available.
+
+Campaign eligibility requires consent for the selected category. The Customer
+fields **Opted In to WhatsApp Utility Campaigns** and **Opted In to WhatsApp
+Marketing** default to off. Grant read/write access at Customer permission level
+1 to the roles responsible for recording consent. Review the audience and run
+**Send Test** before launching a campaign. The test uses sample values and the
+configured internal number. Campaigns are limited to 500 selected customer records.
+
+**Send Now** makes the campaign eligible at the next scheduler tick. **Schedule
+Send** takes a one-time local date and time in the ERPNext site timezone.
+Scheduled campaigns can be rescheduled or cancelled before sending. At dispatch,
+the worker rechecks the approved template, campaign image, consent, and resolved
+phone number. The worker pauses after a failed or unconfirmed attempt. Resume
+continues with unsent recipients. It does not automatically resend any attempted
+recipient. **Refresh Delivery Status** looks for exact message IDs in Chatwoot
+and displays the delivery information Chatwoot returns.
+
+For the pilot, verify template listing and creation, one internal text campaign,
+one internal image campaign, a scheduled send and cancellation, and a normal
+invoice send while a campaign is queued. Confirm message rendering and delivery
+on the test phone and verify that replies reach the expected Chatwoot inbox.

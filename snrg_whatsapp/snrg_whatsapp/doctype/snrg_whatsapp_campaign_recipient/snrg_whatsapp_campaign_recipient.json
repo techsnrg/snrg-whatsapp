@@ -1,0 +1,89 @@
+{
+  "doctype": "DocType",
+  "name": "SNRG WhatsApp Campaign Recipient",
+  "module": "SNRG WhatsApp",
+  "engine": "InnoDB",
+  "autoname": "hash",
+  "istable": 1,
+  "field_order": [
+    "customer",
+    "phone",
+    "status",
+    "message_preview",
+    "detail",
+    "parameters",
+    "attempted_at",
+    "conversation_id",
+    "message_id"
+  ],
+  "fields": [
+    {
+      "fieldname": "customer",
+      "label": "Customer",
+      "fieldtype": "Link",
+      "options": "Customer",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "phone",
+      "label": "Phone",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "status",
+      "label": "Status",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "message_preview",
+      "label": "Message Preview",
+      "fieldtype": "Small Text",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "detail",
+      "label": "Detail",
+      "fieldtype": "Small Text",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "parameters",
+      "label": "Parameters",
+      "fieldtype": "Long Text",
+      "read_only": 1,
+      "no_copy": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "attempted_at",
+      "label": "Attempted At",
+      "fieldtype": "Datetime",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "conversation_id",
+      "label": "Conversation Id",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "message_id",
+      "label": "Message Id",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1
+    }
+  ],
+  "permissions": []
+}

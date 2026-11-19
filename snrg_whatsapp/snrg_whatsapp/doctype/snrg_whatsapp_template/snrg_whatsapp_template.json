@@ -1,0 +1,140 @@
+{
+  "doctype": "DocType",
+  "name": "SNRG WhatsApp Template",
+  "module": "SNRG WhatsApp",
+  "engine": "InnoDB",
+  "autoname": "hash",
+  "istable": 0,
+  "field_order": [
+    "template_name",
+    "language",
+    "category",
+    "status",
+    "body",
+    "header_format",
+    "sample_image",
+    "sample_values",
+    "meta_id",
+    "waba_id",
+    "last_sync",
+    "status_details",
+    "components",
+    "parameter_format"
+  ],
+  "fields": [
+    {
+      "fieldname": "template_name",
+      "label": "Template Name",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "language",
+      "label": "Language",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "default": "en",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "category",
+      "label": "Category",
+      "fieldtype": "Select",
+      "options": "UTILITY\nMARKETING\nAUTHENTICATION",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "status",
+      "label": "Status",
+      "fieldtype": "Data",
+      "default": "Draft",
+      "read_only": 1,
+      "no_copy": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "body",
+      "label": "Body",
+      "fieldtype": "Small Text",
+      "reqd": 1
+    },
+    {
+      "fieldname": "header_format",
+      "label": "Header Format",
+      "fieldtype": "Select",
+      "options": "None\nImage",
+      "default": "None"
+    },
+    {
+      "fieldname": "sample_image",
+      "label": "Sample Image",
+      "fieldtype": "Attach Image",
+      "depends_on": "eval:doc.header_format === 'Image'"
+    },
+    {
+      "fieldname": "sample_values",
+      "label": "Sample Values",
+      "fieldtype": "Small Text",
+      "description": "One example per line, in placeholder order."
+    },
+    {
+      "fieldname": "meta_id",
+      "label": "Meta Id",
+      "fieldtype": "Data",
+      "unique": 1,
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "waba_id",
+      "label": "Waba Id",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "last_sync",
+      "label": "Last Sync",
+      "fieldtype": "Datetime",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "status_details",
+      "label": "Status Details",
+      "fieldtype": "Small Text",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "components",
+      "label": "Components",
+      "fieldtype": "Long Text",
+      "read_only": 1,
+      "no_copy": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "parameter_format",
+      "label": "Parameter Format",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1,
+      "hidden": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1
+    }
+  ],
+  "title_field": "template_name",
+  "search_fields": "template_name,language,category",
+  "show_title_field_in_link": 1,
+  "track_changes": 1
+}
