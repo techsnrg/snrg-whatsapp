@@ -926,7 +926,17 @@ def _deliver_document_whatsapp(
     return response
 
 
+def _require_whatsapp_sending_enabled():
+    if frappe.conf.get("snrg_whatsapp_disable_sending"):
+        frappe.throw("WhatsApp sending is disabled on this site.")
+
+
 def _get_common_config():
+    _require_whatsapp_sending_enabled()
+    return _get_chatwoot_config()
+
+
+def _get_chatwoot_config():
     config = {
         "chatwoot_base_url": (frappe.conf.get("chatwoot_base_url") or "").rstrip("/"),
         "chatwoot_account_id": frappe.conf.get("chatwoot_account_id"),
@@ -1375,11 +1385,11 @@ def _upload_to_chatwoot(config, document_config, doc, filename):
     return _upload_file_bytes_to_chatwoot(config, pdf_bytes, filename)
 
 
-def _upload_file_bytes_to_chatwoot(config, file_bytes, filename):
+def _upload_file_bytes_to_chatwoot(config, file_bytes, filename, content_type="application/pdf"):
     response = requests.post(
         _chatwoot_url(config, "upload"),
         headers={"api_access_token": config["chatwoot_api_access_token"]},
-        files={"attachment": (filename, io.BytesIO(file_bytes), "application/pdf")},
+        files={"attachment": (filename, io.BytesIO(file_bytes), content_type)},
         timeout=REQUEST_TIMEOUT,
     )
     return _parse_chatwoot_response(response, f"upload {filename} to Chatwoot")

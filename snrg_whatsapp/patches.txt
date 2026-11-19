@@ -5,3 +5,4 @@ snrg_whatsapp.patches.v0_0_1.hide_quotation_confirmation_debug_fields
 snrg_whatsapp.patches.v0_0_1.add_cash_discount_reminder_fields
 snrg_whatsapp.patches.v0_0_1.populate_cash_discount_settings_defaults
 snrg_whatsapp.patches.v0_0_1.add_quotation_cancellation_settings
+snrg_whatsapp.patches.v0_0_1.add_whatsapp_campaign_consent

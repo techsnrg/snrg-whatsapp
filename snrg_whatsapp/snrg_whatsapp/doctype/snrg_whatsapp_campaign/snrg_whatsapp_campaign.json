@@ -1,0 +1,137 @@
+{
+  "doctype": "DocType",
+  "name": "SNRG WhatsApp Campaign",
+  "module": "SNRG WhatsApp",
+  "engine": "InnoDB",
+  "autoname": "hash",
+  "istable": 0,
+  "field_order": [
+    "campaign_name",
+    "template",
+    "status",
+    "campaign_image",
+    "variable_values",
+    "scheduled_at",
+    "schedule_timezone",
+    "launched_by",
+    "started_at",
+    "sender_inbox",
+    "status_detail",
+    "recipients",
+    "snapshot",
+    "media_url"
+  ],
+  "fields": [
+    {
+      "fieldname": "campaign_name",
+      "label": "Campaign Name",
+      "fieldtype": "Data",
+      "reqd": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "template",
+      "label": "Template",
+      "fieldtype": "Link",
+      "options": "SNRG WhatsApp Template",
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "status",
+      "label": "Status",
+      "fieldtype": "Data",
+      "default": "Draft",
+      "read_only": 1,
+      "no_copy": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "campaign_image",
+      "label": "Campaign Image",
+      "fieldtype": "Attach Image"
+    },
+    {
+      "fieldname": "variable_values",
+      "label": "Variable Values",
+      "fieldtype": "Small Text",
+      "description": "One value per line, in placeholder order. Use @customer_name, @customer_id, @customer_group or @territory to personalize a value."
+    },
+    {
+      "fieldname": "scheduled_at",
+      "label": "Scheduled At",
+      "fieldtype": "Datetime",
+      "read_only": 1,
+      "no_copy": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "schedule_timezone",
+      "label": "Schedule Timezone",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "launched_by",
+      "label": "Launched By",
+      "fieldtype": "Link",
+      "options": "User",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "started_at",
+      "label": "Started At",
+      "fieldtype": "Datetime",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "sender_inbox",
+      "label": "Sender Inbox",
+      "fieldtype": "Data",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "status_detail",
+      "label": "Status Detail",
+      "fieldtype": "Small Text",
+      "read_only": 1,
+      "no_copy": 1
+    },
+    {
+      "fieldname": "recipients",
+      "label": "Recipients",
+      "fieldtype": "Table",
+      "options": "SNRG WhatsApp Campaign Recipient"
+    },
+    {
+      "fieldname": "snapshot",
+      "label": "Snapshot",
+      "fieldtype": "Long Text",
+      "read_only": 1,
+      "no_copy": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "media_url",
+      "label": "Media Url",
+      "fieldtype": "Small Text",
+      "read_only": 1,
+      "no_copy": 1,
+      "hidden": 1
+    }
+  ],
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1
+    }
+  ],
+  "title_field": "campaign_name",
+  "search_fields": "campaign_name",
+  "track_changes": 1
+}
